@@ -47,11 +47,11 @@ export async function POST(req: NextRequest) {
   // Get merchant credentials
   const { data: merchant } = await supabase
     .from('bc_merchants')
-    .select('access_token, warp_api_key')
+    .select('access_token')
     .eq('store_hash', storeHash)
     .single()
 
-  if (!merchant?.access_token || !merchant?.warp_api_key) {
+  if (!merchant?.access_token) {
     return NextResponse.json({ ok: false, error: 'Merchant not configured' })
   }
 
@@ -190,7 +190,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const booking = await bookWarpShipment(merchant.warp_api_key, bookingParams)
+    const warpApiKey = process.env.WARP_API_KEY || ''
+    const booking = await bookWarpShipment(warpApiKey, bookingParams)
 
     // Save booking record
     await supabase.from('bc_bookings').insert({

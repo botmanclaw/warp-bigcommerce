@@ -51,23 +51,14 @@ export async function POST(req: NextRequest) {
   const { origin, destination, items } = base_options
   const storeId = base_options.store_id
 
-  // Resolve Warp API key
-  let warpApiKey = connection_options?.warp_api_key || ''
-  if (!warpApiKey && storeId) {
-    const { data } = await supabase
-      .from('bc_merchants')
-      .select('warp_api_key')
-      .eq('store_hash', storeId)
-      .single()
-    warpApiKey = data?.warp_api_key || ''
-  }
-  if (!warpApiKey) warpApiKey = process.env.WARP_API_KEY || ''
+  // Always use centralized Warp API key — merchants don't have their own keys
+  const warpApiKey = process.env.WARP_API_KEY || ''
 
   if (!warpApiKey) {
     return NextResponse.json({
       quote_id: 'no_key',
       carrier_quotes: [],
-      messages: [{ text: 'Warp API key not configured', type: 'ERROR' }],
+      messages: [{ text: 'Warp not configured', type: 'ERROR' }],
     })
   }
 
