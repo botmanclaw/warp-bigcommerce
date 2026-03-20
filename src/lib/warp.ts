@@ -98,7 +98,7 @@ export async function getWarpQuote(
     pickupDate: nextBusinessDay(),
     pickupInfo: { zipcode: params.pickupZipcode },
     deliveryInfo: { zipcode: params.dropoffZipcode },
-    items: [{
+    listItems: [{
       name: params.commodityName,
       packaging: 'PALLET',
       quantity: Math.max(1, params.quantity),
@@ -109,13 +109,14 @@ export async function getWarpQuote(
       height: Math.max(1, Math.round(params.height)),
       sizeUnit: 'IN',
     }],
+    shipmentType: 'LTL',
   }
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 25000)
 
   try {
-    const res = await fetch(`${WARP_BASE}/freights/freight-quote`, {
+    const res = await fetch(`${WARP_BASE}/freights/quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: apiKey },
       body: JSON.stringify(body),
@@ -123,18 +124,14 @@ export async function getWarpQuote(
     })
     if (!res.ok) return null
     const data = await res.json()
-    const options = data?.options
-    if (!options?.length) return null
-    // Only use Warp's own network — no partner carriers
-    const best = options.find((o: {source: string}) => o.source === 'WARP')
-    if (!best) return null
-    const transitDays = best.transitTime ? Math.round(best.transitTime / 86400) : null
+    const charge = data?.price?.amount ?? data?.totalCharge
+    if (!charge) return null
     return {
-      totalCharge: Number(best.rate),
-      currency: 'USD',
-      transitDays,
-      carrierName: best.carrierName ?? 'Warp',
-      quoteId: best.id ?? undefined,
+      totalCharge: Number(charge),
+      currency: data?.price?.currency_code ?? 'USD',
+      transitDays: data?.transitDays ?? null,
+      carrierName: 'Warp',
+      quoteId: data?.quote_id ?? undefined,
     }
   } finally {
     clearTimeout(timeout)
@@ -145,24 +142,15 @@ export async function bookWarpShipment(
   apiKey: string,
   params: WarpBookingParams
 ): Promise<{ trackingNumber?: string; shipmentId?: string; raw: Record<string, unknown> }> {
-  // Use /freights/book (not /freights/booking) — works with freight-quote option IDs
-  // Field names: items (not listItems), timeWindow (not windowTime)
-  const res = await fetch(`${WARP_BASE}/freights/book`, {
+  // Use /freights/booking with quote_id from /freights/quote
+  const res = await fetch(`${WARP_BASE}/freights/booking`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: apiKey },
     body: JSON.stringify({
       quoteId: params.quoteId,
-      pickupInfo: {
-        ...params.pickupInfo,
-        timeWindow: params.pickupInfo.windowTime,
-        windowTime: undefined,
-      },
-      deliveryInfo: {
-        ...params.deliveryInfo,
-        timeWindow: params.deliveryInfo.windowTime,
-        windowTime: undefined,
-      },
-      items: params.listItems,
+      pickupInfo: params.pickupInfo,
+      deliveryInfo: params.deliveryInfo,
+      listItems: params.listItems,
     }),
   })
 
@@ -170,8 +158,8 @@ export async function bookWarpShipment(
   if (!res.ok) throw new Error(`Warp booking failed: ${res.status} ${JSON.stringify(raw)}`)
 
   return {
-    trackingNumber: (raw.trackingNumber ?? raw.proNumber) as string | undefined,
-    shipmentId: (raw.shipmentIds as string[] | undefined)?.[0] ?? raw.orderId as string | undefined,
+    trackingNumber: (raw.shipmentNumber ?? raw.trackingNumber ?? raw.proNumber) as string | undefined,
+    shipmentId: (raw.shipmentId ?? raw.id) as string | undefined,
     raw: raw as Record<string, unknown>,
   }
 }
