@@ -155,6 +155,11 @@ export async function POST(req: NextRequest) {
   const originState = order.billing_address?.state_iso2 || order.billing_address?.state || ''
 
   const pickupDate = nextBusinessDay()
+  // Delivery date = pickup + transit days (default 3 if unknown)
+  const transitDays = savedQuote.transit_days ?? 3
+  const deliveryDateObj = new Date(pickupDate)
+  deliveryDateObj.setDate(deliveryDateObj.getDate() + transitDays)
+  const deliveryDate = deliveryDateObj.toISOString().split('T')[0]
 
   const bookingParams = {
     quoteId: savedQuote.warp_quote_id,
@@ -183,7 +188,7 @@ export async function POST(req: NextRequest) {
         state: shipTo.state_iso2 || shipTo.state || '',
         zipcode: (shipTo.zip || '').replace(/\s/g, '').slice(0, 5),
       },
-      windowTime: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T20:00:00` },
+      windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
       ...(savedQuote.is_residential
         ? { serviceOptions: ['residential-delivery'] }
         : {}),
