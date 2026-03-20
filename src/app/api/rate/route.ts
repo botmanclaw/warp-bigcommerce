@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       quote_id: rateId,
       carrier_quotes: [{
-        carrier_info: { code: 'warp', display_name: 'Warp' },
+        carrier_info: { code: 'carrier_573', display_name: 'Warp' },
         quotes: [{
           code: 'WARP_LTL',
           display_name: 'Warp LTL',
