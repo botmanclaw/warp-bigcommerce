@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Fetch the order
-  const order = await getBCOrder(storeHash, merchant.access_token, orderId)
+  const order = await getBCOrder(storeHash, process.env.BC_STORE_API_TOKEN || merchant.access_token, orderId)
   if (!order) return NextResponse.json({ ok: false, error: 'Order not found' })
 
   // Only proceed on paid/ready statuses
@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
 
   // Fetch shipping address and products
   const [shippingAddresses, products] = await Promise.all([
-    getBCOrderShippingAddresses(storeHash, merchant.access_token, orderId),
-    getBCOrderProducts(storeHash, merchant.access_token, orderId),
+    getBCOrderShippingAddresses(storeHash, process.env.BC_STORE_API_TOKEN || merchant.access_token, orderId),
+    getBCOrderProducts(storeHash, process.env.BC_STORE_API_TOKEN || merchant.access_token, orderId),
   ])
 
   const shipTo = shippingAddresses?.[0]
