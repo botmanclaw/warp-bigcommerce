@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
   const { base_options, connection_options } = body
   const { origin, destination, items } = base_options
-  const storeId = base_options.store_id
+  const storeId = (base_options.store_id || '').replace(/^stores\//, '')
 
   // Always use centralized Warp API key — merchants don't have their own keys
   const warpApiKey = process.env.WARP_API_KEY || ''

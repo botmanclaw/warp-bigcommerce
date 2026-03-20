@@ -69,8 +69,10 @@ export async function POST(req: NextRequest) {
   const shipToEarly = shippingAddressesEarly?.[0]
   const destZip = (shipToEarly?.zip || order.billing_address?.zip || '').replace(/\s/g, '').slice(0, 5)
 
+  console.log('[webhook] storeHash:', storeHash, 'destZip:', destZip)
+
   // Look up the saved quote — match by store + shipping dest zip + unbooked + not expired
-  const { data: savedQuote } = await supabase
+  const { data: savedQuote, error: quoteErr } = await supabase
     .from('bc_quotes')
     .select('*')
     .eq('store_hash', storeHash)
@@ -81,6 +83,7 @@ export async function POST(req: NextRequest) {
     .limit(1)
     .single()
 
+  console.log('[webhook] savedQuote:', savedQuote?.rate_id, 'quoteErr:', quoteErr?.message)
   if (!savedQuote?.warp_quote_id) {
     // No matching Warp quote found — not a Warp order or quote expired
     return NextResponse.json({ ok: true, skipped: 'No matching Warp quote found' })
