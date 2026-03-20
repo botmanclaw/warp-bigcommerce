@@ -39,6 +39,39 @@ export async function GET(req: NextRequest) {
   const webhookUrl = `${process.env.APP_URL}/api/webhook/order`
   await registerBCWebhook(storeHash, access_token, 'store/order/statusUpdated', webhookUrl)
 
+  // Register Warp as a shipping carrier on the store
+  await registerWarpCarrier(storeHash, access_token)
+
   // Redirect to the setup/config page inside BC control panel iframe
   return NextResponse.redirect(`${process.env.APP_URL}/setup?store_hash=${storeHash}`)
+}
+
+async function registerWarpCarrier(storeHash: string, accessToken: string) {
+  const headers = { 'X-Auth-Token': accessToken, 'Content-Type': 'application/json' }
+  const base = `https://api.bigcommerce.com/stores/${storeHash}`
+
+  // 1. Connect carrier_573 to store
+  await fetch(`${base}/v2/shipping/carrier/connection`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ carrier_id: 'carrier_573', connection: {} }),
+  }).catch(() => {})
+
+  // 2. Get existing shipping zones
+  const zonesRes = await fetch(`${base}/v2/shipping/zones`, { headers }).catch(() => null)
+  if (!zonesRes?.ok) return
+  const zones = await zonesRes.json().catch(() => [])
+  if (!zones?.length) return
+
+  // 3. Add Warp carrier method to all zones
+  for (const zone of zones) {
+    await fetch(`${base}/v2/shipping/zones/${zone.id}/methods`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        name: 'Warp LTL Freight',
+        type: 'carrier_573',
+        settings: { carrier_id: 'carrier_573' },
+        enabled: true,
+      }),
+    }).catch(() => {})
+  }
 }

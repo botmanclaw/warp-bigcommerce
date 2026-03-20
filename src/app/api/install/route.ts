@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(req: NextRequest) {
   const clientId = process.env.BC_CLIENT_ID!
   const redirectUri = encodeURIComponent(`${process.env.APP_URL}/api/auth`)
-  const scopes = encodeURIComponent('store_v2_information_read_only')
+  const scopes = encodeURIComponent('store_v2_information_read_only store_v2_shipping store_v2_orders_read_only')
 
   const oauthUrl =
     `https://login.bigcommerce.com/oauth2/authorize` +
