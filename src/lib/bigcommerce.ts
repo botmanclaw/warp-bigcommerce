@@ -1,33 +1,30 @@
 const BC_API = 'https://api.bigcommerce.com'
+const BC_HEADERS = (token: string) => ({
+  'X-Auth-Token': token,
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+})
 
 export async function getBCStoreInfo(storeHash: string, accessToken: string) {
-  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/store`, {
-    headers: { 'X-Auth-Token': accessToken, 'Content-Type': 'application/json' },
-  })
+  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/store`, { headers: BC_HEADERS(accessToken) })
   if (!res.ok) return null
   return res.json()
 }
 
 export async function getBCOrder(storeHash: string, accessToken: string, orderId: number) {
-  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/orders/${orderId}`, {
-    headers: { 'X-Auth-Token': accessToken, 'Content-Type': 'application/json' },
-  })
+  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/orders/${orderId}`, { headers: BC_HEADERS(accessToken) })
   if (!res.ok) return null
   return res.json()
 }
 
 export async function getBCOrderShippingAddresses(storeHash: string, accessToken: string, orderId: number) {
-  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/orders/${orderId}/shipping_addresses`, {
-    headers: { 'X-Auth-Token': accessToken, 'Content-Type': 'application/json' },
-  })
+  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/orders/${orderId}/shipping_addresses`, { headers: BC_HEADERS(accessToken) })
   if (!res.ok) return null
   return res.json()
 }
 
 export async function getBCOrderProducts(storeHash: string, accessToken: string, orderId: number) {
-  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/orders/${orderId}/products`, {
-    headers: { 'X-Auth-Token': accessToken, 'Content-Type': 'application/json' },
-  })
+  const res = await fetch(`${BC_API}/stores/${storeHash}/v2/orders/${orderId}/products`, { headers: BC_HEADERS(accessToken) })
   if (!res.ok) return null
   return res.json()
 }
