@@ -47,9 +47,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  console.log('[rate] raw body:', JSON.stringify(body))
   const { base_options, connection_options } = body
   const { origin, destination, items } = base_options
   const storeId = (base_options.store_id || '').replace(/^stores\//, '')
+  console.log('[rate] storeId:', storeId, 'origin.zip:', origin.zip, 'dest.zip:', destination.zip)
 
   // Always use centralized Warp API key — merchants don't have their own keys
   const warpApiKey = process.env.WARP_API_KEY || ''
