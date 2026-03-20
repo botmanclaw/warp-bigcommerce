@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
   }
 
   const orderId = payload.data?.id
-  const storeHash = payload.store_id?.replace('stores/', '')
+  // BC webhook: store_id is numeric; store hash is in producer field ("stores/2fbcpsw0sb")
+  const storeHash = payload.producer?.replace('stores/', '')
 
   if (!orderId || !storeHash) {
     return NextResponse.json({ ok: false, error: 'Missing order ID or store hash' }, { status: 400 })
