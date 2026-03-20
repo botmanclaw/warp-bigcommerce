@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   // Get merchant credentials
   const { data: merchant } = await supabase
     .from('bc_merchants')
-    .select('access_token')
+    .select('access_token,origin_zip,origin_street,origin_city,origin_state,company_name,contact_name,contact_phone')
     .eq('store_hash', storeHash)
     .single()
 
@@ -144,20 +144,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Store origin from merchant config or env fallback
-  // Use origin from saved quote — must match what was used at quote time
-  const originZip = savedQuote.origin_zip || process.env.DEFAULT_ORIGIN_ZIP || '00000'
-  const originStreet = savedQuote.origin_street || process.env.DEFAULT_ORIGIN_STREET || '1 Main St'
-  const originCity = savedQuote.origin_city || process.env.DEFAULT_ORIGIN_CITY || ''
-  const originState = savedQuote.origin_state || process.env.DEFAULT_ORIGIN_STATE || ''
+  // Origin address — use merchant setup data (must match quote)
+  const originZip = savedQuote.origin_zip || merchant.origin_zip || ''
+  const originStreet = merchant.origin_street || '1 Main St'
+  const originCity = merchant.origin_city || ''
+  const originState = merchant.origin_state || ''
 
   const pickupDate = nextBusinessDay()
 
   const bookingParams = {
     quoteId: savedQuote.warp_quote_id,
     pickupInfo: {
-      locationName: order.billing_address?.company || 'Shipper',
-      contactName: `${order.billing_address?.first_name || ''} ${order.billing_address?.last_name || ''}`.trim(),
-      contactPhone: order.billing_address?.phone || '0000000000',
+      locationName: merchant.company_name || 'Shipper',
+      contactName: merchant.contact_name || 'Shipper',
+      contactPhone: merchant.contact_phone || order.billing_address?.phone || '0000000000',
       contactEmail: order.customer_message ? undefined : order.billing_address?.email,
       address: {
         street: originStreet,

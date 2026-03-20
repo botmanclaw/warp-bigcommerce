@@ -62,8 +62,9 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Fetch merchant origin address
-  const { data: merchant } = await supabase.from('bc_merchants').select('origin_street,origin_city,origin_state').eq('store_hash', storeId).single()
+  // Fetch merchant origin — always use our setup page data, not BC's store address
+  const { data: merchant } = await supabase.from('bc_merchants').select('origin_zip,origin_street,origin_city,origin_state').eq('store_hash', storeId).single()
+  const merchantOriginZip = merchant?.origin_zip || origin.zip
 
   // Aggregate items
   let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0
@@ -94,10 +95,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const rate = await getWarpQuote(warpApiKey, {
-      pickupZipcode: origin.zip,
+      pickupZipcode: merchantOriginZip,
       dropoffZipcode: destination.zip,
-      pickupCity: origin.city,
-      pickupState: origin.state_iso2,
+      pickupCity: merchant?.origin_city || origin.city,
+      pickupState: merchant?.origin_state || origin.state_iso2,
       dropoffCity: destination.city,
       dropoffState: destination.state_iso2,
       commodityName,
@@ -126,7 +127,7 @@ export async function POST(req: NextRequest) {
       warp_quote_id: rate.quoteId,
       amount: rate.totalCharge,
       transit_days: rate.transitDays,
-      origin_zip: origin.zip,
+      origin_zip: merchantOriginZip,
       dest_zip: destination.zip,
       dest_city: destination.city,
       dest_state: destination.state_iso2,
