@@ -95,31 +95,27 @@ export async function getWarpQuote(
   params: WarpQuoteParams
 ): Promise<WarpRate | null> {
   const body = {
-    pickupZipcode: params.pickupZipcode,
-    dropoffZipcode: params.dropoffZipcode,
-    ...(params.pickupCity && { pickupCity: params.pickupCity }),
-    ...(params.pickupState && { pickupState: params.pickupState }),
-    ...(params.dropoffCity && { dropoffCity: params.dropoffCity }),
-    ...(params.dropoffState && { dropoffState: params.dropoffState }),
-    shipmentType: 'LTL',
-    shipmentItems: [{
-      quantity: params.quantity,
-      commodityName: params.commodityName,
-      totalWeight: Math.max(1, Math.round(params.totalWeight)),
+    pickupDate: nextBusinessDay(),
+    pickupInfo: { zipcode: params.pickupZipcode },
+    deliveryInfo: { zipcode: params.dropoffZipcode },
+    items: [{
+      name: params.commodityName,
+      packaging: 'PALLET',
+      quantity: Math.max(1, params.quantity),
+      totalWeight: Math.max(100, Math.round(params.totalWeight)),
+      weightUnit: 'lbs',
       length: Math.max(1, Math.round(params.length)),
       width: Math.max(1, Math.round(params.width)),
       height: Math.max(1, Math.round(params.height)),
-      stackable: params.stackable,
+      sizeUnit: 'IN',
     }],
-    ...(params.isResidentialPickup && { pickupInfo: { serviceOptions: ['residential-pickup'] } }),
-    ...(params.isResidentialDelivery && { dropoffInfo: { serviceOptions: ['residential-delivery'] } }),
   }
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 25000)
 
   try {
-    const res = await fetch(`${WARP_BASE}/freights/quote`, {
+    const res = await fetch(`${WARP_BASE}/freights/freight-quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: apiKey },
       body: JSON.stringify(body),
@@ -127,14 +123,17 @@ export async function getWarpQuote(
     })
     if (!res.ok) return null
     const data = await res.json()
-    const charge = data?.totalCharge ?? data?.rate ?? data?.price
-    if (!charge) return null
+    const options = data?.options
+    if (!options?.length) return null
+    // Pick cheapest option
+    const best = options.reduce((a: {rate: number}, b: {rate: number}) => b.rate < a.rate ? b : a, options[0])
+    const transitDays = best.transitTime ? Math.round(best.transitTime / 86400) : null
     return {
-      totalCharge: Number(charge),
+      totalCharge: Number(best.rate),
       currency: 'USD',
-      transitDays: data?.transitDays ?? data?.transit_days ?? null,
-      carrierName: 'Warp',
-      quoteId: data?.id ?? data?.quoteId ?? undefined,
+      transitDays,
+      carrierName: best.carrierName ?? 'Warp',
+      quoteId: best.id ?? undefined,
     }
   } finally {
     clearTimeout(timeout)
