@@ -62,6 +62,9 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // Fetch merchant origin address
+  const { data: merchant } = await supabase.from('bc_merchants').select('origin_street,origin_city,origin_state').eq('store_hash', storeId).single()
+
   // Aggregate items
   let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0
   let commodityName = 'Freight'
@@ -124,6 +127,9 @@ export async function POST(req: NextRequest) {
       amount: rate.totalCharge,
       transit_days: rate.transitDays,
       origin_zip: origin.zip,
+      origin_street: merchant?.origin_street || process.env.DEFAULT_ORIGIN_STREET || '',
+      origin_city: merchant?.origin_city || origin.city || process.env.DEFAULT_ORIGIN_CITY || '',
+      origin_state: merchant?.origin_state || origin.state_iso2 || process.env.DEFAULT_ORIGIN_STATE || '',
       dest_zip: destination.zip,
       dest_city: destination.city,
       dest_state: destination.state_iso2,

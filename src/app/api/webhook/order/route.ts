@@ -144,7 +144,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Store origin from merchant config or env fallback
+  // Use origin from saved quote — must match what was used at quote time
   const originZip = savedQuote.origin_zip || process.env.DEFAULT_ORIGIN_ZIP || '00000'
+  const originStreet = savedQuote.origin_street || process.env.DEFAULT_ORIGIN_STREET || '1 Main St'
+  const originCity = savedQuote.origin_city || process.env.DEFAULT_ORIGIN_CITY || ''
+  const originState = savedQuote.origin_state || process.env.DEFAULT_ORIGIN_STATE || ''
 
   const pickupDate = nextBusinessDay()
 
@@ -156,9 +160,9 @@ export async function POST(req: NextRequest) {
       contactPhone: order.billing_address?.phone || '0000000000',
       contactEmail: order.customer_message ? undefined : order.billing_address?.email,
       address: {
-        street: savedQuote.origin_street || process.env.DEFAULT_ORIGIN_STREET || '',
-        city: process.env.DEFAULT_ORIGIN_CITY || '',
-        state: process.env.DEFAULT_ORIGIN_STATE || '',
+        street: originStreet,
+        city: originCity,
+        state: originState,
         zipcode: originZip,
       },
       windowTime: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
