@@ -8,7 +8,10 @@ const G = '#39FF14'
 
 function SetupInner() {
   const params = useSearchParams()
-  const storeHash = params.get('store_hash') || ''
+  const storeHash = params.get('store_hash') ||
+    (typeof document !== 'undefined'
+      ? document.cookie.split('; ').find(r => r.startsWith('bc_store_hash='))?.split('=')[1] ?? ''
+      : '')
 
   const [originZip, setOriginZip] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')

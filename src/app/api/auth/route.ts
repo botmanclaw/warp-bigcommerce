@@ -42,8 +42,11 @@ export async function GET(req: NextRequest) {
   // Register Warp as a shipping carrier on the store
   await registerWarpCarrier(storeHash, access_token)
 
-  // Redirect to the setup/config page inside BC control panel iframe
-  return NextResponse.redirect(`${process.env.APP_URL}/setup?store_hash=${storeHash}`)
+  // Redirect to setup page — set cookie so iframe reloads can still find store_hash
+  const redirectUrl = `${process.env.APP_URL}/setup?store_hash=${storeHash}`
+  const response = NextResponse.redirect(redirectUrl)
+  response.cookies.set('bc_store_hash', storeHash, { httpOnly: false, path: '/', maxAge: 60 * 60 * 24 * 30, sameSite: 'none', secure: true })
+  return response
 }
 
 async function registerWarpCarrier(storeHash: string, accessToken: string) {
