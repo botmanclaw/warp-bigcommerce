@@ -144,14 +144,24 @@ export async function bookWarpShipment(
   apiKey: string,
   params: WarpBookingParams
 ): Promise<{ trackingNumber?: string; shipmentId?: string; raw: Record<string, unknown> }> {
-  const res = await fetch(`${WARP_BASE}/freights/booking`, {
+  // Use /freights/book (not /freights/booking) — works with freight-quote option IDs
+  // Field names: items (not listItems), timeWindow (not windowTime)
+  const res = await fetch(`${WARP_BASE}/freights/book`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: apiKey },
     body: JSON.stringify({
       quoteId: params.quoteId,
-      pickupInfo: params.pickupInfo,
-      deliveryInfo: params.deliveryInfo,
-      listItems: params.listItems,
+      pickupInfo: {
+        ...params.pickupInfo,
+        timeWindow: params.pickupInfo.windowTime,
+        windowTime: undefined,
+      },
+      deliveryInfo: {
+        ...params.deliveryInfo,
+        timeWindow: params.deliveryInfo.windowTime,
+        windowTime: undefined,
+      },
+      items: params.listItems,
     }),
   })
 
@@ -159,9 +169,9 @@ export async function bookWarpShipment(
   if (!res.ok) throw new Error(`Warp booking failed: ${res.status} ${JSON.stringify(raw)}`)
 
   return {
-    trackingNumber: raw.shipmentNumber ?? raw.trackingNumber ?? raw.proNumber ?? undefined,
-    shipmentId: raw.shipmentId ?? raw.id ?? undefined,
-    raw,
+    trackingNumber: (raw.trackingNumber ?? raw.proNumber) as string | undefined,
+    shipmentId: (raw.shipmentIds as string[] | undefined)?.[0] ?? raw.orderId as string | undefined,
+    raw: raw as Record<string, unknown>,
   }
 }
 
