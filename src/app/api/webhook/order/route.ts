@@ -64,23 +64,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: `status: ${order.status}` })
   }
 
-  // Check if the order used a Warp rate
-  // BC stores the shipping method name and rate_id on the order's shipping lines
-  const shippingCostLine = order.shipping_cost_ex_tax
-  const baseHandlingCostLine = order.base_handling_cost
+  // Fetch shipping address first — use its ZIP for quote matching (billing ZIP ≠ ship-to ZIP)
+  const shippingAddressesEarly = await getBCOrderShippingAddresses(storeHash, process.env.BC_STORE_API_TOKEN || merchant.access_token, orderId)
+  const shipToEarly = shippingAddressesEarly?.[0]
+  const destZip = (shipToEarly?.zip || order.billing_address?.zip || '').replace(/\s/g, '').slice(0, 5)
 
-  // Find Warp quote from our saved quotes
-  // BC passes rate_id back as part of the shipping address / consignment data
-  // We match by store + recent quotes that haven't been booked + dest zip
-  const destZip = order.billing_address?.zip || ''
-
-  // Look up the saved quote for this order
-  // Match by store_hash + dest zip + unbooked + recent (last 4 hours)
+  // Look up the saved quote — match by store + shipping dest zip + unbooked + not expired
   const { data: savedQuote } = await supabase
     .from('bc_quotes')
     .select('*')
     .eq('store_hash', storeHash)
-    .eq('dest_zip', destZip.replace(/\s/g, '').slice(0, 5))
+    .eq('dest_zip', destZip)
     .is('booked_at', null)
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
@@ -105,12 +99,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Fetch shipping address and products
-  const [shippingAddresses, products] = await Promise.all([
-    getBCOrderShippingAddresses(storeHash, process.env.BC_STORE_API_TOKEN || merchant.access_token, orderId),
+  const [, products] = await Promise.all([
+    Promise.resolve(shippingAddressesEarly),
     getBCOrderProducts(storeHash, process.env.BC_STORE_API_TOKEN || merchant.access_token, orderId),
   ])
 
-  const shipTo = shippingAddresses?.[0]
+  const shipTo = shipToEarly
   if (!shipTo) return NextResponse.json({ ok: false, error: 'No shipping address' })
 
   // Build items list from order products
