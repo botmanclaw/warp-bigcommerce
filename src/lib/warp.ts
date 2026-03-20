@@ -125,8 +125,9 @@ export async function getWarpQuote(
     const data = await res.json()
     const options = data?.options
     if (!options?.length) return null
-    // Pick cheapest option
-    const best = options.reduce((a: {rate: number}, b: {rate: number}) => b.rate < a.rate ? b : a, options[0])
+    // Prefer Warp's own network; fall back to cheapest partner carrier
+    const warpOption = options.find((o: {source: string}) => o.source === 'WARP')
+    const best = warpOption ?? options.reduce((a: {rate: number}, b: {rate: number}) => b.rate < a.rate ? b : a, options[0])
     const transitDays = best.transitTime ? Math.round(best.transitTime / 86400) : null
     return {
       totalCharge: Number(best.rate),
