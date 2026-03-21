@@ -61,6 +61,7 @@ export interface WarpBookingParams {
   }>
   pickupServices?: string[]
   deliveryServices?: string[]
+  refNum?: string
 }
 
 export function normalizeWeightToLbs(value: number, unit: string): number {
@@ -166,6 +167,7 @@ export async function bookWarpShipment(
       listItems: params.listItems,
       ...(params.pickupServices?.length  ? { pickupServices:  params.pickupServices.map(s  => ({ service: s, quantity: 1 })) } : {}),
       ...(params.deliveryServices?.length ? { deliveryServices: params.deliveryServices.map(s => ({ service: s, quantity: 1 })) } : {}),
+      ...(params.refNum ? { refNum: params.refNum } : {}),
     }),
   })
 
