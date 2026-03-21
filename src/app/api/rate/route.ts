@@ -1,10 +1,21 @@
-// BigCommerce Shipping Provider API — LTL rate endpoint
-// Returns a single Warp LTL freight rate for the cart
+// BigCommerce Shipping Provider API — unified rate endpoint
+// Auto-detects cart type: Big & Bulky → 3 service levels | FTL → Request Capacity | LTL → standard rate
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getWarpQuote, normalizeWeightToLbs, normalizeDimInches } from '@/lib/warp'
 
 export const maxDuration = 30
+
+const BB_WEIGHT_LBS = 150   // lbs per item
+const BB_LENGTH_IN  = 96    // inches
+const FTL_WEIGHT_LBS = 10000
+const FTL_PALLETS    = 12
+
+const BB_SERVICE_LEVELS = [
+  { code: 'WARP_BB_THRESHOLD',   label: 'Threshold Delivery',  desc: 'Delivery to first dry area',             markup: 1.0  },
+  { code: 'WARP_BB_ROOM',        label: 'Room of Choice',       desc: 'Placed in room of your choice',          markup: 1.15 },
+  { code: 'WARP_BB_WHITE_GLOVE', label: '2-Man White Glove',    desc: 'Assembly, placement & debris removal',   markup: 1.35 },
+]
 
 interface BCItem {
   sku: string; variant_id: string; product_id: string; name: string
@@ -19,12 +30,8 @@ interface BCAddress {
   state_iso2?: string; country_iso2?: string; address_type?: string
 }
 interface BCRateRequest {
-  base_options: {
-    origin: BCAddress; destination: BCAddress; items: BCItem[]
-    store_id: string; customer?: { email?: string }
-  }
+  base_options: { origin: BCAddress; destination: BCAddress; items: BCItem[]; store_id: string; customer?: { email?: string } }
   connection_options?: Record<string, unknown>
-  zone_options?: Record<string, unknown>
 }
 
 export async function POST(req: NextRequest) {
@@ -41,9 +48,10 @@ export async function POST(req: NextRequest) {
   if (!warpApiKey) return NextResponse.json({ quote_id: 'no_key', carrier_quotes: [], messages: [] })
 
   // Aggregate cart
-  let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0
+  let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0, estimatedPallets = 0
   let commodityName = 'Freight'
   const itemSnapshots = []
+  let hasBigBulkyItem = false
 
   for (const item of items) {
     const qty = item.quantity ?? 1
@@ -53,10 +61,12 @@ export async function POST(req: NextRequest) {
     const hgtIn = normalizeDimInches(item.height.value, item.height.units)
     totalWeightLbs += wLbs * qty
     totalQty += qty
+    estimatedPallets += Math.ceil(qty * Math.max(1, lenIn / 48) * Math.max(1, widIn / 40))
     if (lenIn > maxLength) maxLength = lenIn
     if (widIn > maxWidth)  maxWidth  = widIn
     if (hgtIn > maxHeight) maxHeight = hgtIn
     if (item.name) commodityName = item.name
+    if (wLbs >= BB_WEIGHT_LBS || lenIn >= BB_LENGTH_IN) hasBigBulkyItem = true
     itemSnapshots.push({ sku: item.sku, name: item.name, quantity: qty, weight_lbs: wLbs })
   }
 
@@ -66,24 +76,35 @@ export async function POST(req: NextRequest) {
   if (totalWeightLbs < 1) totalWeightLbs = 150
   if (totalQty < 1) totalQty = 1
 
+  const isFTL      = totalWeightLbs >= FTL_WEIGHT_LBS || estimatedPallets >= FTL_PALLETS
+  const isBigBulky = hasBigBulkyItem && !isFTL
   const isResidential = destination.address_type?.toUpperCase() === 'RESIDENTIAL'
+
+  // FTL: return Request Capacity
+  if (isFTL) {
+    const ftlId = `ftl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    await supabase.from('bc_ftl_detections').insert({
+      store_id: storeId, dest_zip: destination.zip?.slice(0, 5),
+      total_weight_lbs: Math.round(totalWeightLbs), estimated_pallets: Math.round(estimatedPallets),
+      item_count: totalQty,
+    }).then(() => {})
+    return NextResponse.json({
+      quote_id: ftlId, messages: [],
+      carrier_quotes: [{
+        carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' },
+        quotes: [{ code: 'WARP_FTL', display_name: 'Full Truckload (FTL) — Request Capacity', rate_id: ftlId, cost: { currency: 'USD', amount: 0.01 }, description: 'Your order qualifies for FTL. A Warp freight specialist will contact you within 2 business hours.', transit_time: { units: 'BUSINESS_DAYS', duration: 5 } }],
+      }],
+    })
+  }
 
   try {
     const rate = await getWarpQuote(warpApiKey, {
-      pickupZipcode: origin.zip,
-      dropoffZipcode: destination.zip,
-      pickupCity: origin.city,
-      pickupState: origin.state_iso2,
-      dropoffCity: destination.city,
-      dropoffState: destination.state_iso2,
-      commodityName,
-      totalWeight: totalWeightLbs,
-      quantity: totalQty,
-      length: maxLength,
-      width: maxWidth,
-      height: maxHeight,
-      stackable: false,
-      isResidentialDelivery: isResidential,
+      pickupZipcode: origin.zip, dropoffZipcode: destination.zip,
+      pickupCity: origin.city, pickupState: origin.state_iso2,
+      dropoffCity: destination.city, dropoffState: destination.state_iso2,
+      commodityName, totalWeight: totalWeightLbs, quantity: totalQty,
+      length: maxLength, width: maxWidth, height: maxHeight,
+      stackable: false, isResidentialDelivery: isResidential,
     })
 
     if (!rate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
@@ -91,36 +112,39 @@ export async function POST(req: NextRequest) {
     const rateId = `warp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
     await supabase.from('bc_quotes').insert({
-      rate_id: rateId,
-      store_hash: storeId,
-      warp_quote_id: rate.quoteId,
-      amount: rate.totalCharge,
-      transit_days: rate.transitDays,
-      origin_zip: origin.zip,
-      dest_zip: destination.zip,
-      dest_city: destination.city,
-      dest_state: destination.state_iso2,
-      is_residential: isResidential,
-      items_snapshot: itemSnapshots,
-      total_weight_lbs: Math.round(totalWeightLbs),
-      total_qty: totalQty,
-      length_in: Math.round(maxLength),
-      width_in: Math.round(maxWidth),
-      height_in: Math.round(maxHeight),
-      commodity_name: commodityName,
-      customer_email: base_options.customer?.email,
+      rate_id: rateId, store_hash: storeId, warp_quote_id: rate.quoteId,
+      amount: rate.totalCharge, transit_days: rate.transitDays,
+      origin_zip: origin.zip, dest_zip: destination.zip,
+      dest_city: destination.city, dest_state: destination.state_iso2,
+      is_residential: isResidential, items_snapshot: itemSnapshots,
+      total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty,
+      length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight),
+      commodity_name: commodityName, customer_email: base_options.customer?.email,
       expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     })
 
+    // Big & Bulky: 3 service levels
+    if (isBigBulky) {
+      return NextResponse.json({
+        quote_id: rateId, messages: [],
+        carrier_quotes: [{
+          carrier_info: { code: 'carrier_573', display_name: 'Warp Big & Bulky' },
+          quotes: BB_SERVICE_LEVELS.map(svc => ({
+            code: `${svc.code}_${rateId}`, display_name: svc.label, description: svc.desc, rate_id: rateId,
+            cost: { currency: 'USD', amount: parseFloat((rate.totalCharge * svc.markup).toFixed(2)) },
+            transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays ?? 5 },
+          })),
+        }],
+      })
+    }
+
+    // Standard LTL
     return NextResponse.json({
-      quote_id: rateId,
-      messages: [],
+      quote_id: rateId, messages: [],
       carrier_quotes: [{
         carrier_info: { code: 'carrier_573', display_name: 'Warp' },
         quotes: [{
-          code: `WARP_LTL_${rateId}`,
-          display_name: 'Warp LTL',
-          rate_id: rateId,
+          code: `WARP_LTL_${rateId}`, display_name: 'Warp LTL', rate_id: rateId,
           cost: { currency: 'USD', amount: rate.totalCharge },
           description: 'Freight shipping via Warp',
           transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays ?? 5 },
