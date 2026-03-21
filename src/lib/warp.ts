@@ -113,8 +113,7 @@ export async function getWarpQuote(
   const timeout = setTimeout(() => controller.abort(), 25000)
 
   try {
-    // Use /freights/freight-quote — the working multi-carrier endpoint
-    const res = await fetch(`${WARP_BASE}/freights/freight-quote`, {
+    const res = await fetch(`${WARP_BASE}/freights/quote`, {
       method: 'POST',
       headers,
       signal: controller.signal,
@@ -122,22 +121,23 @@ export async function getWarpQuote(
         pickupDate,
         pickupInfo: { zipcode: params.pickupZipcode },
         deliveryInfo: { zipcode: params.dropoffZipcode },
-        items: [item],
+        listItems: [item],
+        shipmentType: 'LTL',
       }),
     })
 
-    if (res.ok) {
-      const data = await res.json()
-      const options: Array<{ id: string; rate: number; transitTime?: number; source?: string }> = data?.options ?? []
-      if (options.length > 0) {
-        // Pick cheapest option
-        const best = options.reduce((a, b) => (a.rate <= b.rate ? a : b))
-        const transitDays = best.transitTime ? Math.round(best.transitTime / 86400) : null
-        return { totalCharge: best.rate, currency: 'USD', transitDays, carrierName: best.source ?? 'Warp', quoteId: best.id }
-      }
-    }
+    if (!res.ok) return null
+    const data = await res.json()
+    const charge = data?.price?.amount ?? data?.totalCharge
+    if (!charge) return null
 
-    return null
+    return {
+      totalCharge: Number(charge),
+      currency: data?.price?.currency_code ?? 'USD',
+      transitDays: data?.transitDays ?? null,
+      carrierName: 'Warp',
+      quoteId: data?.quote_id ?? data?.id ?? undefined,
+    }
   } catch (err) {
     console.error('[warp] getWarpQuote error:', err)
     return null
