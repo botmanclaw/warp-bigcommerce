@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
   const destZip = (shipToEarly?.zip || order.billing_address?.zip || '').replace(/\s/g, '').slice(0, 5)
 
   // Detect B&B service level from order shipping method display name (must be before quote lookup)
+  console.log('[webhook] order.shipping_method raw:', JSON.stringify(order.shipping_method))
   const shippingMethod: string = (order.shipping_method || '').toLowerCase()
   let bbServiceLevelPattern = ''
   if (shippingMethod.includes('white glove') || shippingMethod.includes('wg')) bbServiceLevelPattern = 'WARP_BB_WG'
