@@ -47,6 +47,10 @@ export async function POST(req: NextRequest) {
   const warpApiKey = process.env.WARP_API_KEY || ''
   if (!warpApiKey) return NextResponse.json({ quote_id: 'no_key', carrier_quotes: [], messages: [] })
 
+  // Use merchant's configured origin ZIP from setup page (fallback to BC store origin)
+  const { data: merchant } = await supabase.from('bc_merchants').select('origin_zip').eq('store_hash', storeId).single()
+  const originZip = merchant?.origin_zip || origin.zip
+
   // Aggregate cart
   let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0, estimatedPallets = 0
   let commodityName = 'Freight'
@@ -73,8 +77,10 @@ export async function POST(req: NextRequest) {
   if (maxLength < 1) maxLength = 48
   if (maxWidth  < 1) maxWidth  = 40
   if (maxHeight < 1) maxHeight = 48
-  if (totalWeightLbs < 1) totalWeightLbs = 150
   if (totalQty < 1) totalQty = 1
+
+  // Below 75 lbs total — not freight, skip Warp and let parcel carriers handle it
+  if (totalWeightLbs < 75) return NextResponse.json({ quote_id: 'parcel', carrier_quotes: [], messages: [] })
 
   const isFTL      = totalWeightLbs >= FTL_WEIGHT_LBS || estimatedPallets >= FTL_PALLETS
   const isBigBulky = hasBigBulkyItem && !isFTL
@@ -99,7 +105,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const rate = await getWarpQuote(warpApiKey, {
-      pickupZipcode: origin.zip, dropoffZipcode: destination.zip,
+      pickupZipcode: originZip, dropoffZipcode: destination.zip,
       pickupCity: origin.city, pickupState: origin.state_iso2,
       dropoffCity: destination.city, dropoffState: destination.state_iso2,
       commodityName, totalWeight: totalWeightLbs, quantity: totalQty,
@@ -114,7 +120,7 @@ export async function POST(req: NextRequest) {
     await supabase.from('bc_quotes').insert({
       rate_id: rateId, store_hash: storeId, warp_quote_id: rate.quoteId,
       amount: rate.totalCharge, transit_days: rate.transitDays,
-      origin_zip: origin.zip, dest_zip: destination.zip,
+      origin_zip: originZip, dest_zip: destination.zip,
       dest_city: destination.city, dest_state: destination.state_iso2,
       is_residential: isResidential, items_snapshot: itemSnapshots,
       total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty,

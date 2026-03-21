@@ -99,7 +99,7 @@ export async function getWarpQuote(
     name: params.commodityName || 'Freight',
     packaging: 'PALLET',
     quantity: Math.max(1, params.quantity),
-    totalWeight: Math.max(100, Math.round(params.totalWeight)),
+    totalWeight: Math.max(1, Math.round(params.totalWeight)),
     weightUnit: 'lbs',
     length: Math.max(1, Math.round(params.length)),
     width: Math.max(1, Math.round(params.width)),
