@@ -171,39 +171,36 @@ export async function POST(req: NextRequest) {
   deliveryDateObj.setDate(deliveryDateObj.getDate() + transitDays)
   const deliveryDate = deliveryDateObj.toISOString().split('T')[0]
 
+  const deliveryServicesList = [
+    ...(savedQuote.is_residential ? ['residential-delivery'] : []),
+    ...bbDeliveryServices,
+  ]
+
   const bookingParams = {
     quoteId: savedQuote.warp_quote_id,
     pickupInfo: {
       locationName: order.billing_address?.company || 'Shipper',
       contactName: `${order.billing_address?.first_name || ''} ${order.billing_address?.last_name || ''}`.trim() || 'Shipper',
       contactPhone: order.billing_address?.phone || '0000000000',
-      contactEmail: order.customer_message ? undefined : order.billing_address?.email,
-      address: {
-        street: originStreet,
-        city: originCity,
-        state: originState,
-        zipcode: originZip,
-      },
-      timeWindow: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
-      ...(savedQuote.is_residential ? {} : {}),
+      contactEmail: order.billing_address?.email || undefined,
+      address: { street: originStreet, city: originCity, state: originState, zipcode: originZip },
+      appointmentInfo: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
     },
     deliveryInfo: {
       locationName: shipTo.company || `${shipTo.first_name} ${shipTo.last_name}`,
       contactName: `${shipTo.first_name} ${shipTo.last_name}`,
       contactPhone: shipTo.phone || '0000000000',
-      contactEmail: order.billing_address?.email,
+      contactEmail: order.billing_address?.email || undefined,
       address: {
         street: shipTo.street_1 || '',
         city: shipTo.city || '',
         state: shipTo.state_iso2 || shipTo.state || '',
         zipcode: (shipTo.zip || '').replace(/\s/g, '').slice(0, 5),
       },
-      timeWindow: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
-      ...((savedQuote.is_residential || bbDeliveryServices.length > 0)
-        ? { serviceOptions: [...(savedQuote.is_residential ? ['residential-delivery'] : []), ...bbDeliveryServices] }
-        : {}),
+      appointmentInfo: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
-    items: listItems,
+    listItems,
+    deliveryServices: deliveryServicesList,
   }
 
   try {

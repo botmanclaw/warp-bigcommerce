@@ -34,9 +34,7 @@ export interface WarpBookingParams {
     contactPhone: string
     contactEmail?: string
     address: { street: string; city: string; state: string; zipcode: string }
-    timeWindow: { from: string; to: string }
-    serviceOptions?: string[]
-    instructions?: string
+    appointmentInfo?: { from: string; to: string }
     refNum?: string
   }
   deliveryInfo: {
@@ -45,12 +43,10 @@ export interface WarpBookingParams {
     contactPhone: string
     contactEmail?: string
     address: { street: string; city: string; state: string; zipcode: string }
-    timeWindow: { from: string; to: string }
-    serviceOptions?: string[]
-    instructions?: string
+    appointmentInfo?: { from: string; to: string }
     refNum?: string
   }
-  items: Array<{
+  listItems: Array<{
     name: string
     packaging: string
     height: number
@@ -62,6 +58,8 @@ export interface WarpBookingParams {
     weightUnit: string
     stackable: boolean
   }>
+  pickupServices?: string[]
+  deliveryServices?: string[]
 }
 
 export function normalizeWeightToLbs(value: number, unit: string): number {
@@ -157,7 +155,9 @@ export async function bookWarpShipment(
       quoteId: params.quoteId,
       pickupInfo: params.pickupInfo,
       deliveryInfo: params.deliveryInfo,
-      listItems: params.items,
+      listItems: params.listItems,
+      ...(params.pickupServices?.length  ? { pickupServices:  params.pickupServices.map(s => ({ service: s, quantity: 1 })) }  : {}),
+      ...(params.deliveryServices?.length ? { deliveryServices: params.deliveryServices.map(s => ({ service: s, quantity: 1 })) } : {}),
     }),
   })
 
