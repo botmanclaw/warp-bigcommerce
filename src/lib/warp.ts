@@ -164,7 +164,7 @@ export async function bookWarpShipment(
       pickupInfo: params.pickupInfo,
       deliveryInfo: params.deliveryInfo,
       listItems: params.listItems,
-      ...(params.pickupServices?.length  ? { pickupServices:  params.pickupServices.map(s => ({ service: s, quantity: 1 })) }  : {}),
+      ...(params.pickupServices?.length  ? { pickupServices:  params.pickupServices.map(s  => ({ service: s, quantity: 1 })) } : {}),
       ...(params.deliveryServices?.length ? { deliveryServices: params.deliveryServices.map(s => ({ service: s, quantity: 1 })) } : {}),
     }),
   })
