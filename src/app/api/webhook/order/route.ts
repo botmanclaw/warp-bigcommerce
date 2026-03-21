@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
         state: originState,
         zipcode: originZip,
       },
-      windowTime: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
+      timeWindow: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
       ...(savedQuote.is_residential ? {} : {}),
     },
     deliveryInfo: {
@@ -188,12 +188,12 @@ export async function POST(req: NextRequest) {
         state: shipTo.state_iso2 || shipTo.state || '',
         zipcode: (shipTo.zip || '').replace(/\s/g, '').slice(0, 5),
       },
-      windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
+      timeWindow: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
       ...(savedQuote.is_residential
         ? { serviceOptions: ['residential-delivery'] }
         : {}),
     },
-    listItems,
+    items: listItems,
   }
 
   try {

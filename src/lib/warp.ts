@@ -34,7 +34,7 @@ export interface WarpBookingParams {
     contactPhone: string
     contactEmail?: string
     address: { street: string; city: string; state: string; zipcode: string }
-    windowTime: { from: string; to: string }
+    timeWindow: { from: string; to: string }
     serviceOptions?: string[]
     instructions?: string
     refNum?: string
@@ -45,12 +45,12 @@ export interface WarpBookingParams {
     contactPhone: string
     contactEmail?: string
     address: { street: string; city: string; state: string; zipcode: string }
-    windowTime: { from: string; to: string }
+    timeWindow: { from: string; to: string }
     serviceOptions?: string[]
     instructions?: string
     refNum?: string
   }
-  listItems: Array<{
+  items: Array<{
     name: string
     packaging: string
     height: number
@@ -94,45 +94,53 @@ export async function getWarpQuote(
   apiKey: string,
   params: WarpQuoteParams
 ): Promise<WarpRate | null> {
-  const body = {
-    pickupDate: nextBusinessDay(),
-    pickupInfo: { zipcode: params.pickupZipcode },
-    deliveryInfo: { zipcode: params.dropoffZipcode },
-    listItems: [{
-      name: params.commodityName,
-      packaging: 'PALLET',
-      quantity: Math.max(1, params.quantity),
-      totalWeight: Math.max(100, Math.round(params.totalWeight)),
-      weightUnit: 'lbs',
-      length: Math.max(1, Math.round(params.length)),
-      width: Math.max(1, Math.round(params.width)),
-      height: Math.max(1, Math.round(params.height)),
-      sizeUnit: 'IN',
-    }],
-    shipmentType: 'LTL',
+  const pickupDate = nextBusinessDay()
+  const item = {
+    name: params.commodityName || 'Freight',
+    packaging: 'PALLET',
+    quantity: Math.max(1, params.quantity),
+    totalWeight: Math.max(100, Math.round(params.totalWeight)),
+    weightUnit: 'lbs',
+    length: Math.max(1, Math.round(params.length)),
+    width: Math.max(1, Math.round(params.width)),
+    height: Math.max(1, Math.round(params.height)),
+    sizeUnit: 'IN',
+    stackable: params.stackable ?? false,
   }
 
+  const headers = { 'Content-Type': 'application/json', apikey: apiKey }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 25000)
 
   try {
-    const res = await fetch(`${WARP_BASE}/freights/quote`, {
+    // Use /freights/freight-quote — the working multi-carrier endpoint
+    const res = await fetch(`${WARP_BASE}/freights/freight-quote`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: apiKey },
-      body: JSON.stringify(body),
+      headers,
       signal: controller.signal,
+      body: JSON.stringify({
+        pickupDate,
+        pickupInfo: { zipcode: params.pickupZipcode },
+        deliveryInfo: { zipcode: params.dropoffZipcode },
+        items: [item],
+      }),
     })
-    if (!res.ok) return null
-    const data = await res.json()
-    const charge = data?.price?.amount ?? data?.totalCharge
-    if (!charge) return null
-    return {
-      totalCharge: Number(charge),
-      currency: data?.price?.currency_code ?? 'USD',
-      transitDays: data?.transitDays ?? null,
-      carrierName: 'Warp',
-      quoteId: data?.quote_id ?? undefined,
+
+    if (res.ok) {
+      const data = await res.json()
+      const options: Array<{ id: string; rate: number; transitTime?: number; source?: string }> = data?.options ?? []
+      if (options.length > 0) {
+        // Pick cheapest option
+        const best = options.reduce((a, b) => (a.rate <= b.rate ? a : b))
+        const transitDays = best.transitTime ? Math.round(best.transitTime / 86400) : null
+        return { totalCharge: best.rate, currency: 'USD', transitDays, carrierName: best.source ?? 'Warp', quoteId: best.id }
+      }
     }
+
+    return null
+  } catch (err) {
+    console.error('[warp] getWarpQuote error:', err)
+    return null
   } finally {
     clearTimeout(timeout)
   }
@@ -142,15 +150,14 @@ export async function bookWarpShipment(
   apiKey: string,
   params: WarpBookingParams
 ): Promise<{ trackingNumber?: string; shipmentId?: string; raw: Record<string, unknown> }> {
-  // Use /freights/booking with quote_id from /freights/quote
-  const res = await fetch(`${WARP_BASE}/freights/booking`, {
+  const res = await fetch(`${WARP_BASE}/freights/book`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: apiKey },
     body: JSON.stringify({
       quoteId: params.quoteId,
       pickupInfo: params.pickupInfo,
       deliveryInfo: params.deliveryInfo,
-      listItems: params.listItems,
+      items: params.items,
     }),
   })
 
@@ -158,8 +165,8 @@ export async function bookWarpShipment(
   if (!res.ok) throw new Error(`Warp booking failed: ${res.status} ${JSON.stringify(raw)}`)
 
   return {
-    trackingNumber: (raw.shipmentNumber ?? raw.trackingNumber ?? raw.proNumber) as string | undefined,
-    shipmentId: (raw.shipmentId ?? raw.id) as string | undefined,
+    trackingNumber: (raw.trackingNumber ?? raw.proNumber ?? raw.shipmentNumber) as string | undefined,
+    shipmentId: (raw.orderId ?? raw.shipmentId ?? raw.id) as string | undefined,
     raw: raw as Record<string, unknown>,
   }
 }
