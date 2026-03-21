@@ -1,25 +1,10 @@
-// BigCommerce Shipping Provider API — unified rate endpoint
-// Detects cart type: Big & Bulky → 3 service levels | FTL → Request Capacity | LTL → standard rate
+// BigCommerce Shipping Provider API — LTL rate endpoint
+// Returns a single Warp LTL freight rate for the cart
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getWarpQuote, normalizeWeightToLbs, normalizeDimInches } from '@/lib/warp'
 
 export const maxDuration = 30
-
-// Big & Bulky thresholds
-const BB_WEIGHT_LBS = 150
-const BB_LENGTH_IN  = 96
-
-// FTL thresholds
-const FTL_WEIGHT_LBS  = 10000
-const FTL_PALLETS     = 12
-
-// Big & Bulky service level markups
-const BB_SERVICE_LEVELS = [
-  { code: 'WARP_BB_THRESHOLD',    label: 'Threshold Delivery',     desc: 'Delivery to first dry area',    markup: 1.0  },
-  { code: 'WARP_BB_ROOM',         label: 'Room of Choice',          desc: 'Placed in room of your choice', markup: 1.15 },
-  { code: 'WARP_BB_WHITE_GLOVE',  label: '2-Man White Glove',       desc: 'Assembly, placement & debris removal', markup: 1.35 },
-]
 
 interface BCItem {
   sku: string; variant_id: string; product_id: string; name: string
@@ -53,14 +38,12 @@ export async function POST(req: NextRequest) {
   const storeId = (base_options.store_id || '').replace(/^stores\//, '')
 
   const warpApiKey = process.env.WARP_API_KEY || ''
-  if (!warpApiKey) return NextResponse.json({ carrier_quotes: [] })
+  if (!warpApiKey) return NextResponse.json({ quote_id: 'no_key', carrier_quotes: [], messages: [] })
 
-  // --- Aggregate cart ---
-  let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0
-  let totalQty = 0, estimatedPallets = 0
+  // Aggregate cart
+  let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0
   let commodityName = 'Freight'
   const itemSnapshots = []
-  let hasBigBulkyItem = false
 
   for (const item of items) {
     const qty = item.quantity ?? 1
@@ -70,14 +53,11 @@ export async function POST(req: NextRequest) {
     const hgtIn = normalizeDimInches(item.height.value, item.height.units)
     totalWeightLbs += wLbs * qty
     totalQty += qty
-    estimatedPallets += Math.ceil(qty * Math.max(1, lenIn / 48) * Math.max(1, widIn / 40))
     if (lenIn > maxLength) maxLength = lenIn
     if (widIn > maxWidth)  maxWidth  = widIn
     if (hgtIn > maxHeight) maxHeight = hgtIn
     if (item.name) commodityName = item.name
     itemSnapshots.push({ sku: item.sku, name: item.name, quantity: qty, weight_lbs: wLbs })
-    // Big & Bulky: any single item over weight or length threshold
-    if (wLbs >= BB_WEIGHT_LBS || lenIn >= BB_LENGTH_IN) hasBigBulkyItem = true
   }
 
   if (maxLength < 1) maxLength = 48
@@ -86,35 +66,8 @@ export async function POST(req: NextRequest) {
   if (totalWeightLbs < 1) totalWeightLbs = 150
   if (totalQty < 1) totalQty = 1
 
-  const isFTL      = totalWeightLbs >= FTL_WEIGHT_LBS || estimatedPallets >= FTL_PALLETS
-  const isBigBulky = hasBigBulkyItem && !isFTL
   const isResidential = destination.address_type?.toUpperCase() === 'RESIDENTIAL'
 
-  // --- FTL: return Request Capacity option ---
-  if (isFTL) {
-    const ftlId = `ftl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    await supabase.from('bc_ftl_detections').insert({
-      store_id: storeId, dest_zip: destination.zip?.slice(0, 5),
-      total_weight_lbs: Math.round(totalWeightLbs), estimated_pallets: Math.round(estimatedPallets),
-      item_count: totalQty,
-    }).then(() => {})
-
-    return NextResponse.json({
-      quote_id: ftlId,
-      carrier_quotes: [{
-        carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' },
-        quotes: [{
-          code: 'WARP_FTL',
-          display_name: 'Full Truckload (FTL) — Request Capacity',
-          cost: { currency: 'USD', amount: 0.01 },
-          description: 'Your order qualifies for FTL. A Warp freight specialist will contact you within 2 business hours with a custom rate.',
-          transit_time: { units: 'BUSINESS_DAYS', duration: 5 },
-        }],
-      }],
-    })
-  }
-
-  // --- Get Warp base rate (used for both LTL and Big & Bulky) ---
   try {
     const rate = await getWarpQuote(warpApiKey, {
       pickupZipcode: origin.zip,
@@ -133,7 +86,7 @@ export async function POST(req: NextRequest) {
       isResidentialDelivery: isResidential,
     })
 
-    if (!rate) return NextResponse.json({ carrier_quotes: [] })
+    if (!rate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
 
     const rateId = `warp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
@@ -159,26 +112,6 @@ export async function POST(req: NextRequest) {
       expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     })
 
-    // --- Big & Bulky: return 3 service level options ---
-    if (isBigBulky) {
-      return NextResponse.json({
-        quote_id: rateId,
-        messages: [],
-        carrier_quotes: [{
-          carrier_info: { code: 'carrier_573', display_name: 'Warp Big & Bulky' },
-          quotes: BB_SERVICE_LEVELS.map(svc => ({
-            code: `${svc.code}_${rateId}`,
-            display_name: svc.label,
-            description: svc.desc,
-            rate_id: rateId,
-            cost: { currency: 'USD', amount: parseFloat((rate.totalCharge * svc.markup).toFixed(2)) },
-            transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays ?? 5 },
-          })),
-        }],
-      })
-    }
-
-    // --- Standard LTL ---
     return NextResponse.json({
       quote_id: rateId,
       messages: [],
@@ -196,6 +129,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[warp-bc] rate error:', err)
-    return NextResponse.json({ carrier_quotes: [] })
+    return NextResponse.json({ quote_id: 'error', carrier_quotes: [], messages: [] })
   }
 }
