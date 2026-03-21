@@ -163,14 +163,16 @@ export async function POST(req: NextRequest) {
     if (isBigBulky) {
       return NextResponse.json({
         quote_id: rateId,
+        messages: [],
         carrier_quotes: [{
           carrier_info: { code: 'carrier_573', display_name: 'Warp Big & Bulky' },
           quotes: BB_SERVICE_LEVELS.map(svc => ({
             code: `${svc.code}_${rateId}`,
             display_name: svc.label,
             description: svc.desc,
+            rate_id: rateId,
             cost: { currency: 'USD', amount: parseFloat((rate.totalCharge * svc.markup).toFixed(2)) },
-            ...(rate.transitDays && { transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays } }),
+            transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays ?? 5 },
           })),
         }],
       })
@@ -179,14 +181,16 @@ export async function POST(req: NextRequest) {
     // --- Standard LTL ---
     return NextResponse.json({
       quote_id: rateId,
+      messages: [],
       carrier_quotes: [{
         carrier_info: { code: 'carrier_573', display_name: 'Warp' },
         quotes: [{
           code: `WARP_LTL_${rateId}`,
           display_name: 'Warp LTL',
+          rate_id: rateId,
           cost: { currency: 'USD', amount: rate.totalCharge },
           description: 'Freight shipping via Warp',
-          ...(rate.transitDays && { transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays } }),
+          transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays ?? 5 },
         }],
       }],
     })
