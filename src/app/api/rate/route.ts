@@ -113,32 +113,22 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Big & Bulky: 3 parallel quotes, each with correct services
+    // Big & Bulky: single quote, 3 price tiers via markup
     if (isBigBulky) {
-      const [rateThreshold, rateRoom, rateWG] = await Promise.all([
-        getWarpQuote(warpApiKey, { ...baseQuoteParams }),
-        getWarpQuote(warpApiKey, { ...baseQuoteParams, deliveryServices: ['inside-delivery'] }),
-        getWarpQuote(warpApiKey, { ...baseQuoteParams, deliveryServices: ['inside-delivery', 'liftgate-delivery'] }),
-      ])
-
-      if (!rateThreshold) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
+      const bbRate = await getWarpQuote(warpApiKey, baseQuoteParams)
+      if (!bbRate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
 
       const ts = `${Date.now()}_${Math.random().toString(36).slice(2, 5)}`
-      const baseRow = {
-        store_hash: storeId, origin_zip: originZip, dest_zip: destination.zip,
-        dest_city: destination.city, dest_state: destination.state_iso2,
-        is_residential: isResidential, items_snapshot: itemSnapshots,
-        total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty,
-        length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight),
-        commodity_name: commodityName, customer_email: base_options.customer?.email,
-        transit_days: rateThreshold.transitDays,
-        expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
-      }
+      const priceThreshold = bbRate.totalCharge
+      const priceRoom = parseFloat((priceThreshold * 1.15).toFixed(2))
+      const priceWG  = parseFloat((priceThreshold * 1.35).toFixed(2))
+      const transitDays = bbRate.transitDays ?? 5
 
+      // Save 3 rows (same warp_quote_id) so webhook can match by tier-coded rate_id
       await supabase.from('bc_quotes').insert([
-        { ...baseRow, rate_id: `WARP_BB_THRESHOLD_${ts}`, warp_quote_id: rateThreshold.quoteId, amount: rateThreshold.totalCharge },
-        { ...baseRow, rate_id: `WARP_BB_ROOM_${ts}`,      warp_quote_id: rateRoom?.quoteId,      amount: rateRoom?.totalCharge ?? rateThreshold.totalCharge * 1.15 },
-        { ...baseRow, rate_id: `WARP_BB_WG_${ts}`,        warp_quote_id: rateWG?.quoteId,        amount: rateWG?.totalCharge  ?? rateThreshold.totalCharge * 1.35 },
+        { rate_id: `WARP_BB_THRESHOLD_${ts}`, store_hash: storeId, warp_quote_id: bbRate.quoteId, amount: priceThreshold, transit_days: transitDays, origin_zip: originZip, dest_zip: destination.zip, dest_city: destination.city, dest_state: destination.state_iso2, is_residential: isResidential, items_snapshot: itemSnapshots, total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty, length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight), commodity_name: commodityName, customer_email: base_options.customer?.email, expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString() },
+        { rate_id: `WARP_BB_ROOM_${ts}`,      store_hash: storeId, warp_quote_id: bbRate.quoteId, amount: priceRoom,      transit_days: transitDays, origin_zip: originZip, dest_zip: destination.zip, dest_city: destination.city, dest_state: destination.state_iso2, is_residential: isResidential, items_snapshot: itemSnapshots, total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty, length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight), commodity_name: commodityName, customer_email: base_options.customer?.email, expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString() },
+        { rate_id: `WARP_BB_WG_${ts}`,        store_hash: storeId, warp_quote_id: bbRate.quoteId, amount: priceWG,        transit_days: transitDays, origin_zip: originZip, dest_zip: destination.zip, dest_city: destination.city, dest_state: destination.state_iso2, is_residential: isResidential, items_snapshot: itemSnapshots, total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty, length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight), commodity_name: commodityName, customer_email: base_options.customer?.email, expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString() },
       ])
 
       return NextResponse.json({
@@ -146,9 +136,9 @@ export async function POST(req: NextRequest) {
         carrier_quotes: [{
           carrier_info: { code: 'carrier_573', display_name: 'Warp Big & Bulky' },
           quotes: [
-            { code: `WARP_BB_THRESHOLD_${ts}`, display_name: 'Threshold Delivery',  description: 'Delivery to first dry area',             rate_id: `WARP_BB_THRESHOLD_${ts}`, cost: { currency: 'USD', amount: rateThreshold.totalCharge }, transit_time: { units: 'BUSINESS_DAYS', duration: rateThreshold.transitDays ?? 5 } },
-            { code: `WARP_BB_ROOM_${ts}`,      display_name: 'Room of Choice',       description: 'Placed in room of your choice',           rate_id: `WARP_BB_ROOM_${ts}`,      cost: { currency: 'USD', amount: rateRoom?.totalCharge ?? parseFloat((rateThreshold.totalCharge * 1.15).toFixed(2)) }, transit_time: { units: 'BUSINESS_DAYS', duration: rateThreshold.transitDays ?? 5 } },
-            { code: `WARP_BB_WG_${ts}`,        display_name: '2-Man White Glove',    description: 'Assembly, placement & debris removal',    rate_id: `WARP_BB_WG_${ts}`,        cost: { currency: 'USD', amount: rateWG?.totalCharge  ?? parseFloat((rateThreshold.totalCharge * 1.35).toFixed(2)) }, transit_time: { units: 'BUSINESS_DAYS', duration: rateThreshold.transitDays ?? 5 } },
+            { code: `WARP_BB_THRESHOLD_${ts}`, display_name: 'Threshold Delivery', description: 'Delivery to first dry area',          rate_id: `WARP_BB_THRESHOLD_${ts}`, cost: { currency: 'USD', amount: priceThreshold }, transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } },
+            { code: `WARP_BB_ROOM_${ts}`,      display_name: 'Room of Choice',      description: 'Placed in room of your choice',      rate_id: `WARP_BB_ROOM_${ts}`,      cost: { currency: 'USD', amount: priceRoom },      transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } },
+            { code: `WARP_BB_WG_${ts}`,        display_name: '2-Man White Glove',   description: 'Assembly, placement & debris removal', rate_id: `WARP_BB_WG_${ts}`,      cost: { currency: 'USD', amount: priceWG },        transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } },
           ],
         }],
       })

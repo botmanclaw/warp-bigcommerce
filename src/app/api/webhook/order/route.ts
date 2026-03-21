@@ -176,15 +176,11 @@ export async function POST(req: NextRequest) {
   deliveryDateObj.setDate(deliveryDateObj.getDate() + transitDays)
   const deliveryDate = deliveryDateObj.toISOString().split('T')[0]
 
-  // Map rate_id pattern to delivery services (must match what was quoted)
-  const bbDeliveryServices: string[] = []
-  if (savedQuote.rate_id?.includes('WARP_BB_WG')) bbDeliveryServices.push('inside-delivery', 'liftgate-delivery')
-  else if (savedQuote.rate_id?.includes('WARP_BB_ROOM')) bbDeliveryServices.push('inside-delivery')
-
-  const deliveryServicesList = [
-    ...(savedQuote.is_residential ? ['residential-delivery'] : []),
-    ...bbDeliveryServices,
-  ]
+  // Derive service level label from rate_id for refNum (Warp API key doesn't support B&B service codes)
+  let bbServiceLabel = ''
+  if (savedQuote.rate_id?.includes('WARP_BB_WG')) bbServiceLabel = '2-Man White Glove'
+  else if (savedQuote.rate_id?.includes('WARP_BB_ROOM')) bbServiceLabel = 'Room of Choice'
+  else if (savedQuote.rate_id?.includes('WARP_BB_THRESHOLD')) bbServiceLabel = 'Threshold'
 
   const bookingParams = {
     quoteId: savedQuote.warp_quote_id,
@@ -210,10 +206,7 @@ export async function POST(req: NextRequest) {
       windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
     listItems,
-    // Must exactly match what was in the quote — omit field if no services (not empty array)
-    ...(deliveryServicesList.length
-      ? { deliveryServices: deliveryServicesList }
-      : {}),
+    refNum: `BC-${orderId}${bbServiceLabel ? ` | ${bbServiceLabel}` : ''}`,
   }
 
   try {
