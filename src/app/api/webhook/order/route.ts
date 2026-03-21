@@ -154,6 +154,16 @@ export async function POST(req: NextRequest) {
   const originCity = order.billing_address?.city || ''
   const originState = order.billing_address?.state_iso2 || order.billing_address?.state || ''
 
+  // Detect B&B service level from order shipping method code → map to Warp accessorials
+  const shippingMethod: string = order.shipping_method || order.base_shipping_cost_desc || ''
+  const bbDeliveryServices: string[] = []
+  if (shippingMethod.includes('WARP_BB_WHITE_GLOVE') || shippingMethod.toLowerCase().includes('white glove')) {
+    bbDeliveryServices.push('inside-delivery', 'liftgate-delivery')
+  } else if (shippingMethod.includes('WARP_BB_ROOM') || shippingMethod.toLowerCase().includes('room of choice')) {
+    bbDeliveryServices.push('inside-delivery')
+  }
+  // Threshold = no extra accessorials (standard drop at door)
+
   const pickupDate = nextBusinessDay()
   // Delivery date = pickup + transit days (default 3 if unknown)
   const transitDays = savedQuote.transit_days ?? 3
@@ -189,8 +199,8 @@ export async function POST(req: NextRequest) {
         zipcode: (shipTo.zip || '').replace(/\s/g, '').slice(0, 5),
       },
       timeWindow: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
-      ...(savedQuote.is_residential
-        ? { serviceOptions: ['residential-delivery'] }
+      ...((savedQuote.is_residential || bbDeliveryServices.length > 0)
+        ? { serviceOptions: [...(savedQuote.is_residential ? ['residential-delivery'] : []), ...bbDeliveryServices] }
         : {}),
     },
     items: listItems,
