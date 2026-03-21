@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
       contactPhone: order.billing_address?.phone || '0000000000',
       contactEmail: order.billing_address?.email || undefined,
       address: { street: originStreet, city: originCity, state: originState, zipcode: originZip },
-      appointmentInfo: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
+      windowTime: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
     },
     deliveryInfo: {
       locationName: shipTo.company || `${shipTo.first_name} ${shipTo.last_name}`,
@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
         state: shipTo.state_iso2 || shipTo.state || '',
         zipcode: (shipTo.zip || '').replace(/\s/g, '').slice(0, 5),
       },
-      appointmentInfo: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
+      windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
     listItems,
     deliveryServices: deliveryServicesList,
