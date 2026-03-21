@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
   let bbDeliveryServices: string[] = []
   if (savedQuote.rate_id?.includes('WARP_BB_WG')) {
     bbServiceLabel = '2-Man White Glove'
-    bbDeliveryServices = ['white-glove-delivery']
+    bbDeliveryServices = ['inside-delivery', 'liftgate-delivery']
   } else if (savedQuote.rate_id?.includes('WARP_BB_ROOM')) {
     bbServiceLabel = 'Room of Choice'
     bbDeliveryServices = ['inside-delivery']
