@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       quote_id: ftlId, messages: [],
       carrier_quotes: [{
         carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' },
-        quotes: [{ code: 'WARP_FTL', display_name: 'Full Truckload (FTL) — Request Capacity', rate_id: ftlId, cost: { currency: 'USD', amount: 0.01 }, description: 'Your order qualifies for FTL. A Warp freight specialist will contact you within 2 business hours.', transit_time: { units: 'BUSINESS_DAYS', duration: 5 } }],
+        quotes: [{ code: 'WARP_FTL', display_name: 'Custom Freight Quote', rate_id: ftlId, cost: { currency: 'USD', amount: 0.01 }, description: 'Your order is too large for standard shipping. A Warp freight specialist will contact you within 2 business hours to confirm pricing and delivery.', transit_time: { units: 'BUSINESS_DAYS', duration: 7 } }],
       }],
     })
   }
