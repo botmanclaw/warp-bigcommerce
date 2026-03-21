@@ -79,8 +79,7 @@ export async function POST(req: NextRequest) {
   if (maxHeight < 1) maxHeight = 48
   if (totalQty < 1) totalQty = 1
 
-  // Below 75 lbs total — not freight, skip Warp and let parcel carriers handle it
-  if (totalWeightLbs < 75) return NextResponse.json({ quote_id: 'parcel', carrier_quotes: [], messages: [] })
+  // Warp handles all weight ranges through their carrier network (FedEx/UPS last-mile for lighter items)
 
   const isFTL      = totalWeightLbs >= FTL_WEIGHT_LBS || estimatedPallets >= FTL_PALLETS
   const isBigBulky = hasBigBulkyItem && !isFTL
