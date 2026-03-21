@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   )
 
   await registerBCWebhook(storeHash, access_token, 'store/order/statusUpdated', `${appUrl}/api/webhook/order`)
-  await registerWarpCarrier(storeHash, access_token, 'Warp LTL Freight')
+  await registerWarpCarrier(storeHash, process.env.BC_STORE_API_TOKEN || access_token, 'Warp LTL Freight')
 
   const res = NextResponse.redirect(`${appUrl}/setup?store_hash=${storeHash}`)
   res.cookies.set('bc_store_hash', storeHash, { httpOnly: false, path: '/', maxAge: 60 * 60 * 24 * 30, sameSite: 'none', secure: true })
