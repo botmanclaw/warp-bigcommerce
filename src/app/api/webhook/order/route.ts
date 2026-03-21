@@ -200,7 +200,6 @@ export async function POST(req: NextRequest) {
       windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
     listItems,
-    deliveryServices: deliveryServicesList,
   }
 
   try {
