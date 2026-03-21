@@ -71,8 +71,10 @@ export async function POST(req: NextRequest) {
   const destZip = (shipToEarly?.zip || order.billing_address?.zip || '').replace(/\s/g, '').slice(0, 5)
 
   // Detect B&B service level from order shipping method display name (must be before quote lookup)
-  console.log('[webhook] order.shipping_method raw:', JSON.stringify(order.shipping_method))
-  const shippingMethod: string = (order.shipping_method || '').toLowerCase()
+  // BC puts shipping method on shipping addresses, not top-level order
+  const shipMethodRaw = order.shipping_method ?? shipToEarly?.shipping_method ?? ''
+  console.log('[webhook] shipping_method sources:', JSON.stringify({ order: order.shipping_method, addr: shipToEarly?.shipping_method }))
+  const shippingMethod: string = (shipMethodRaw || '').toLowerCase()
   let bbServiceLevelPattern = ''
   if (shippingMethod.includes('white glove') || shippingMethod.includes('wg')) bbServiceLevelPattern = 'WARP_BB_WG'
   else if (shippingMethod.includes('room of choice') || shippingMethod.includes('room')) bbServiceLevelPattern = 'WARP_BB_ROOM'
@@ -208,7 +210,6 @@ export async function POST(req: NextRequest) {
       windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
     listItems,
-    deliveryServices: deliveryServicesList,
   }
 
   try {

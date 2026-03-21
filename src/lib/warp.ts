@@ -128,8 +128,12 @@ export async function getWarpQuote(
       }),
     })
 
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error('[warp] getWarpQuote failed:', res.status, await res.text().catch(() => ''))
+      return null
+    }
     const data = await res.json()
+    console.log('[warp] quote response keys:', Object.keys(data || {}), 'services:', JSON.stringify(data?.deliveryServices ?? data?.services ?? null))
     const charge = data?.price?.amount ?? data?.totalCharge
     if (!charge) return null
 
