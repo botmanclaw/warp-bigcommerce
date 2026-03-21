@@ -150,14 +150,14 @@ export async function bookWarpShipment(
   apiKey: string,
   params: WarpBookingParams
 ): Promise<{ trackingNumber?: string; shipmentId?: string; raw: Record<string, unknown> }> {
-  const res = await fetch(`${WARP_BASE}/freights/book`, {
+  const res = await fetch(`${WARP_BASE}/freights/booking`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: apiKey },
     body: JSON.stringify({
       quoteId: params.quoteId,
       pickupInfo: params.pickupInfo,
       deliveryInfo: params.deliveryInfo,
-      items: params.items,
+      listItems: params.items,
     }),
   })
 
