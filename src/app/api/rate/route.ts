@@ -103,15 +103,58 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  const baseQuoteParams = {
+    pickupZipcode: originZip, dropoffZipcode: destination.zip,
+    pickupCity: origin.city, pickupState: origin.state_iso2,
+    dropoffCity: destination.city, dropoffState: destination.state_iso2,
+    commodityName, totalWeight: totalWeightLbs, quantity: totalQty,
+    length: maxLength, width: maxWidth, height: maxHeight,
+    stackable: false, isResidentialDelivery: isResidential,
+  }
+
   try {
-    const rate = await getWarpQuote(warpApiKey, {
-      pickupZipcode: originZip, dropoffZipcode: destination.zip,
-      pickupCity: origin.city, pickupState: origin.state_iso2,
-      dropoffCity: destination.city, dropoffState: destination.state_iso2,
-      commodityName, totalWeight: totalWeightLbs, quantity: totalQty,
-      length: maxLength, width: maxWidth, height: maxHeight,
-      stackable: false, isResidentialDelivery: isResidential,
-    })
+    // Big & Bulky: 3 parallel quotes, each with correct services
+    if (isBigBulky) {
+      const [rateThreshold, rateRoom, rateWG] = await Promise.all([
+        getWarpQuote(warpApiKey, { ...baseQuoteParams }),
+        getWarpQuote(warpApiKey, { ...baseQuoteParams, deliveryServices: ['inside-delivery'] }),
+        getWarpQuote(warpApiKey, { ...baseQuoteParams, deliveryServices: ['inside-delivery', 'liftgate-delivery'] }),
+      ])
+
+      if (!rateThreshold) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
+
+      const ts = `${Date.now()}_${Math.random().toString(36).slice(2, 5)}`
+      const baseRow = {
+        store_hash: storeId, origin_zip: originZip, dest_zip: destination.zip,
+        dest_city: destination.city, dest_state: destination.state_iso2,
+        is_residential: isResidential, items_snapshot: itemSnapshots,
+        total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty,
+        length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight),
+        commodity_name: commodityName, customer_email: base_options.customer?.email,
+        transit_days: rateThreshold.transitDays,
+        expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      }
+
+      await supabase.from('bc_quotes').insert([
+        { ...baseRow, rate_id: `WARP_BB_THRESHOLD_${ts}`, warp_quote_id: rateThreshold.quoteId, amount: rateThreshold.totalCharge },
+        { ...baseRow, rate_id: `WARP_BB_ROOM_${ts}`,      warp_quote_id: rateRoom?.quoteId,      amount: rateRoom?.totalCharge ?? rateThreshold.totalCharge * 1.15 },
+        { ...baseRow, rate_id: `WARP_BB_WG_${ts}`,        warp_quote_id: rateWG?.quoteId,        amount: rateWG?.totalCharge  ?? rateThreshold.totalCharge * 1.35 },
+      ])
+
+      return NextResponse.json({
+        quote_id: `WARP_BB_${ts}`, messages: [],
+        carrier_quotes: [{
+          carrier_info: { code: 'carrier_573', display_name: 'Warp Big & Bulky' },
+          quotes: [
+            { code: `WARP_BB_THRESHOLD_${ts}`, display_name: 'Threshold Delivery',  description: 'Delivery to first dry area',             rate_id: `WARP_BB_THRESHOLD_${ts}`, cost: { currency: 'USD', amount: rateThreshold.totalCharge }, transit_time: { units: 'BUSINESS_DAYS', duration: rateThreshold.transitDays ?? 5 } },
+            { code: `WARP_BB_ROOM_${ts}`,      display_name: 'Room of Choice',       description: 'Placed in room of your choice',           rate_id: `WARP_BB_ROOM_${ts}`,      cost: { currency: 'USD', amount: rateRoom?.totalCharge ?? parseFloat((rateThreshold.totalCharge * 1.15).toFixed(2)) }, transit_time: { units: 'BUSINESS_DAYS', duration: rateThreshold.transitDays ?? 5 } },
+            { code: `WARP_BB_WG_${ts}`,        display_name: '2-Man White Glove',    description: 'Assembly, placement & debris removal',    rate_id: `WARP_BB_WG_${ts}`,        cost: { currency: 'USD', amount: rateWG?.totalCharge  ?? parseFloat((rateThreshold.totalCharge * 1.35).toFixed(2)) }, transit_time: { units: 'BUSINESS_DAYS', duration: rateThreshold.transitDays ?? 5 } },
+          ],
+        }],
+      })
+    }
+
+    const rate = await getWarpQuote(warpApiKey, baseQuoteParams)
 
     if (!rate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
 
@@ -128,21 +171,6 @@ export async function POST(req: NextRequest) {
       commodity_name: commodityName, customer_email: base_options.customer?.email,
       expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     })
-
-    // Big & Bulky: 3 service levels
-    if (isBigBulky) {
-      return NextResponse.json({
-        quote_id: rateId, messages: [],
-        carrier_quotes: [{
-          carrier_info: { code: 'carrier_573', display_name: 'Warp Big & Bulky' },
-          quotes: BB_SERVICE_LEVELS.map(svc => ({
-            code: `${svc.code}_${rateId}`, display_name: svc.label, description: svc.desc, rate_id: rateId,
-            cost: { currency: 'USD', amount: parseFloat((rate.totalCharge * svc.markup).toFixed(2)) },
-            transit_time: { units: 'BUSINESS_DAYS', duration: rate.transitDays ?? 5 },
-          })),
-        }],
-      })
-    }
 
     // Standard LTL
     return NextResponse.json({

@@ -16,6 +16,7 @@ export interface WarpQuoteParams {
   stackable: boolean
   isResidentialPickup?: boolean
   isResidentialDelivery?: boolean
+  deliveryServices?: string[] // e.g. ['inside-delivery', 'liftgate-delivery']
 }
 
 export interface WarpRate {
@@ -121,6 +122,9 @@ export async function getWarpQuote(
         deliveryInfo: { zipcode: params.dropoffZipcode },
         listItems: [item],
         shipmentType: 'LTL',
+        ...(params.deliveryServices?.length
+          ? { deliveryServices: params.deliveryServices.map(s => ({ service: s, quantity: 1 })) }
+          : {}),
       }),
     })
 

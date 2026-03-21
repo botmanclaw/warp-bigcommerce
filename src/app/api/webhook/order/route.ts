@@ -70,10 +70,17 @@ export async function POST(req: NextRequest) {
   const shipToEarly = shippingAddressesEarly?.[0]
   const destZip = (shipToEarly?.zip || order.billing_address?.zip || '').replace(/\s/g, '').slice(0, 5)
 
-  console.log('[webhook] storeHash:', storeHash, 'destZip:', destZip)
+  // Detect B&B service level from order shipping method display name (must be before quote lookup)
+  const shippingMethod: string = (order.shipping_method || '').toLowerCase()
+  let bbServiceLevelPattern = ''
+  if (shippingMethod.includes('white glove') || shippingMethod.includes('wg')) bbServiceLevelPattern = 'WARP_BB_WG'
+  else if (shippingMethod.includes('room of choice') || shippingMethod.includes('room')) bbServiceLevelPattern = 'WARP_BB_ROOM'
+  else if (shippingMethod.includes('threshold')) bbServiceLevelPattern = 'WARP_BB_THRESHOLD'
 
-  // Look up the saved quote — match by store + shipping dest zip + unbooked + not expired
-  const { data: savedQuote, error: quoteErr } = await supabase
+  console.log('[webhook] storeHash:', storeHash, 'destZip:', destZip, 'bbLevel:', bbServiceLevelPattern || 'ltl')
+
+  // Look up the saved quote — match by store + dest zip + service level pattern (for B&B) + unbooked + not expired
+  let quoteQuery = supabase
     .from('bc_quotes')
     .select('*')
     .eq('store_hash', storeHash)
@@ -82,7 +89,12 @@ export async function POST(req: NextRequest) {
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+
+  if (bbServiceLevelPattern) {
+    quoteQuery = quoteQuery.ilike('rate_id', `${bbServiceLevelPattern}%`)
+  }
+
+  const { data: savedQuote, error: quoteErr } = await quoteQuery.single()
 
   console.log('[webhook] savedQuote:', savedQuote?.rate_id, 'quoteErr:', quoteErr?.message)
   if (!savedQuote?.warp_quote_id) {
@@ -154,22 +166,17 @@ export async function POST(req: NextRequest) {
   const originCity = order.billing_address?.city || ''
   const originState = order.billing_address?.state_iso2 || order.billing_address?.state || ''
 
-  // Detect B&B service level from order shipping method code → map to Warp accessorials
-  const shippingMethod: string = order.shipping_method || order.base_shipping_cost_desc || ''
-  const bbDeliveryServices: string[] = []
-  if (shippingMethod.includes('WARP_BB_WHITE_GLOVE') || shippingMethod.toLowerCase().includes('white glove')) {
-    bbDeliveryServices.push('inside-delivery', 'liftgate-delivery')
-  } else if (shippingMethod.includes('WARP_BB_ROOM') || shippingMethod.toLowerCase().includes('room of choice')) {
-    bbDeliveryServices.push('inside-delivery')
-  }
-  // Threshold = no extra accessorials (standard drop at door)
-
   const pickupDate = nextBusinessDay()
   // Delivery date = pickup + transit days (default 3 if unknown)
   const transitDays = savedQuote.transit_days ?? 3
   const deliveryDateObj = new Date(pickupDate)
   deliveryDateObj.setDate(deliveryDateObj.getDate() + transitDays)
   const deliveryDate = deliveryDateObj.toISOString().split('T')[0]
+
+  // Map rate_id pattern to delivery services (must match what was quoted)
+  const bbDeliveryServices: string[] = []
+  if (savedQuote.rate_id?.includes('WARP_BB_WG')) bbDeliveryServices.push('inside-delivery', 'liftgate-delivery')
+  else if (savedQuote.rate_id?.includes('WARP_BB_ROOM')) bbDeliveryServices.push('inside-delivery')
 
   const deliveryServicesList = [
     ...(savedQuote.is_residential ? ['residential-delivery'] : []),
@@ -200,6 +207,7 @@ export async function POST(req: NextRequest) {
       windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
     listItems,
+    ...(deliveryServicesList.length ? { deliveryServices: deliveryServicesList } : {}),
   }
 
   try {
