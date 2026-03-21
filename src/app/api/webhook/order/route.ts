@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getBCOrder, getBCOrderShippingAddresses, getBCOrderProducts } from '@/lib/bigcommerce'
-import { bookWarpShipment, nextBusinessDay, normalizeWeightToLbs } from '@/lib/warp'
+import { bookWarpShipment, getWarpQuote, nextBusinessDay, normalizeWeightToLbs } from '@/lib/warp'
 
 // BC order statuses that indicate payment confirmed / ready to ship
 const PAID_STATUSES = [
@@ -176,14 +176,42 @@ export async function POST(req: NextRequest) {
   deliveryDateObj.setDate(deliveryDateObj.getDate() + transitDays)
   const deliveryDate = deliveryDateObj.toISOString().split('T')[0]
 
-  // Derive service level label from rate_id for refNum (Warp API key doesn't support B&B service codes)
+  // Map rate_id to B&B service level
   let bbServiceLabel = ''
-  if (savedQuote.rate_id?.includes('WARP_BB_WG')) bbServiceLabel = '2-Man White Glove'
-  else if (savedQuote.rate_id?.includes('WARP_BB_ROOM')) bbServiceLabel = 'Room of Choice'
-  else if (savedQuote.rate_id?.includes('WARP_BB_THRESHOLD')) bbServiceLabel = 'Threshold'
+  let bbDeliveryServices: string[] = []
+  if (savedQuote.rate_id?.includes('WARP_BB_WG')) {
+    bbServiceLabel = '2-Man White Glove'
+    bbDeliveryServices = ['inside-delivery', 'liftgate-delivery']
+  } else if (savedQuote.rate_id?.includes('WARP_BB_ROOM')) {
+    bbServiceLabel = 'Room of Choice'
+    bbDeliveryServices = ['inside-delivery']
+  } else if (savedQuote.rate_id?.includes('WARP_BB_THRESHOLD')) {
+    bbServiceLabel = 'Threshold'
+  }
+
+  // For B&B tiers with services: get a fresh quote at booking time with the correct services
+  // (checkout quotes are service-free for pricing display; fresh quote ensures exact service match)
+  let finalQuoteId = savedQuote.warp_quote_id
+  const warpApiKey = process.env.WARP_API_KEY || ''
+
+  if (bbDeliveryServices.length > 0) {
+    const freshQuote = await getWarpQuote(warpApiKey, {
+      pickupZipcode: savedQuote.origin_zip || '',
+      dropoffZipcode: savedQuote.dest_zip || '',
+      commodityName: savedQuote.commodity_name || 'Freight',
+      totalWeight: savedQuote.total_weight_lbs || 150,
+      quantity: savedQuote.total_qty || 1,
+      length: savedQuote.length_in || 48,
+      width: savedQuote.width_in || 40,
+      height: savedQuote.height_in || 48,
+      stackable: false,
+      deliveryServices: bbDeliveryServices,
+    })
+    if (freshQuote?.quoteId) finalQuoteId = freshQuote.quoteId
+  }
 
   const bookingParams = {
-    quoteId: savedQuote.warp_quote_id,
+    quoteId: finalQuoteId,
     pickupInfo: {
       locationName: order.billing_address?.company || 'Shipper',
       contactName: `${order.billing_address?.first_name || ''} ${order.billing_address?.last_name || ''}`.trim() || 'Shipper',
@@ -206,11 +234,11 @@ export async function POST(req: NextRequest) {
       windowTime: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
     },
     listItems,
+    ...(bbDeliveryServices.length ? { deliveryServices: bbDeliveryServices } : {}),
     refNum: `BC-${orderId}${bbServiceLabel ? ` | ${bbServiceLabel}` : ''}`,
   }
 
   try {
-    const warpApiKey = process.env.WARP_API_KEY || ''
     const booking = await bookWarpShipment(warpApiKey, bookingParams)
 
     // Save booking record

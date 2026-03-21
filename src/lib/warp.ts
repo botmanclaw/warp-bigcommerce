@@ -83,7 +83,7 @@ export function normalizeDimInches(value: number, unit: string): number {
 }
 
 // Next business day as YYYY-MM-DD
-function nextBusinessDay(): string {
+export function nextBusinessDay(): string {
   const d = new Date()
   d.setDate(d.getDate() + 1)
   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
@@ -181,4 +181,4 @@ export async function bookWarpShipment(
   }
 }
 
-export { nextBusinessDay }
+
