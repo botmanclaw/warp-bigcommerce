@@ -141,7 +141,7 @@ export async function getWarpQuote(
     return {
       totalCharge: Number(charge),
       currency: data?.price?.currency_code ?? 'USD',
-      transitDays: data?.transitDays ?? null,
+      transitDays: data?.transit_time ?? data?.transitDays ?? null,
       carrierName: 'Warp',
       quoteId: data?.quote_id ?? data?.id ?? undefined,
     }
