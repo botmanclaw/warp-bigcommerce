@@ -92,19 +92,41 @@ export async function POST(req: NextRequest) {
   const isBigBulky = hasBigBulkyItem && !isFTL
   const isResidential = destination.address_type?.toUpperCase() === 'RESIDENTIAL'
 
-  // FTL: return Request Capacity
+  // FTL: get real Warp FTL quote
   if (isFTL) {
-    const ftlId = `ftl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    await supabase.from('bc_ftl_detections').insert({
-      store_id: storeId, dest_zip: destination.zip?.slice(0, 5),
-      total_weight_lbs: Math.round(totalWeightLbs), estimated_pallets: Math.round(estimatedPallets),
-      item_count: totalQty,
+    const ftlQuoteParams = {
+      pickupZipcode: originZip, dropoffZipcode: destination.zip,
+      pickupCity: origin.city, pickupState: origin.state_iso2,
+      dropoffCity: destination.city, dropoffState: destination.state_iso2,
+      commodityName, totalWeight: totalWeightLbs, quantity: totalQty,
+      length: maxLength, width: maxWidth, height: maxHeight,
+      stackable: false, isResidentialDelivery: isResidential,
+      shipmentType: 'FTL' as const,
+    }
+    const ftlRate = await getWarpQuote(warpApiKey, ftlQuoteParams)
+    if (!ftlRate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
+
+    const ts = Date.now()
+    const rateId = `WARP_FTL_${ts}`
+    const transitDays = ftlRate.transitDays ?? 3
+
+    await supabase.from('bc_quotes').insert({
+      rate_id: rateId, store_hash: storeId, warp_quote_id: ftlRate.quoteId,
+      amount: ftlRate.totalCharge, transit_days: transitDays,
+      origin_zip: originZip, dest_zip: destination.zip,
+      dest_city: destination.city, dest_state: destination.state_iso2,
+      is_residential: isResidential, items_snapshot: itemSnapshots,
+      total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty,
+      length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight),
+      commodity_name: commodityName, customer_email: base_options.customer?.email,
+      expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     }).then(() => {})
+
     return NextResponse.json({
-      quote_id: ftlId, messages: [],
+      quote_id: rateId, messages: [],
       carrier_quotes: [{
         carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' },
-        quotes: [{ code: 'WARP_FTL', display_name: 'Custom Freight Quote', rate_id: ftlId, cost: { currency: 'USD', amount: 0.01 }, description: 'Your order is too large for standard shipping. A Warp freight specialist will contact you within 2 business hours to confirm pricing and delivery.', transit_time: { units: 'BUSINESS_DAYS', duration: 7 } }],
+        quotes: [{ code: rateId, display_name: 'Warp FTL', rate_id: rateId, cost: { currency: 'USD', amount: ftlRate.totalCharge }, transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } }],
       }],
     })
   }
