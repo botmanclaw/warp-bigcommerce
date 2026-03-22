@@ -94,12 +94,14 @@ export async function POST(req: NextRequest) {
 
   // FTL: get real Warp FTL quote
   if (isFTL) {
+    // Use pallet-based weight estimate if actual weight is too low for FTL (min 500 lbs/pallet)
+    const ftlWeight = Math.max(totalWeightLbs, estimatedPallets * 500, 10000)
     const ftlQuoteParams = {
       pickupZipcode: originZip, dropoffZipcode: destination.zip,
       pickupCity: origin.city, pickupState: origin.state_iso2,
       dropoffCity: destination.city, dropoffState: destination.state_iso2,
-      commodityName, totalWeight: totalWeightLbs, quantity: totalQty,
-      length: maxLength, width: maxWidth, height: maxHeight,
+      commodityName, totalWeight: ftlWeight, quantity: totalQty,
+      length: Math.max(maxLength, 48), width: Math.max(maxWidth, 40), height: Math.max(maxHeight, 48),
       stackable: false, isResidentialDelivery: isResidential,
       shipmentType: 'FTL' as const,
     }
@@ -116,8 +118,8 @@ export async function POST(req: NextRequest) {
       origin_zip: originZip, dest_zip: destination.zip,
       dest_city: destination.city, dest_state: destination.state_iso2,
       is_residential: isResidential, items_snapshot: itemSnapshots,
-      total_weight_lbs: Math.round(totalWeightLbs), total_qty: totalQty,
-      length_in: Math.round(maxLength), width_in: Math.round(maxWidth), height_in: Math.round(maxHeight),
+      total_weight_lbs: Math.round(ftlWeight), total_qty: totalQty,
+      length_in: Math.round(Math.max(maxLength, 48)), width_in: Math.round(Math.max(maxWidth, 40)), height_in: Math.round(Math.max(maxHeight, 48)),
       commodity_name: commodityName, customer_email: base_options.customer?.email,
       expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     }).then(() => {})
