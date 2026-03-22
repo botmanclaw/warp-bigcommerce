@@ -81,8 +81,8 @@ export async function POST(req: NextRequest) {
   if (maxHeight < 1) maxHeight = 48
   if (totalQty < 1) totalQty = 1
 
-  // Ensure minimum 100 lbs so Warp always returns a freight quote (LTL minimum)
-  if (totalWeightLbs < 100) totalWeightLbs = 100
+  // Minimum 1 lb to avoid zero-weight API errors
+  if (totalWeightLbs < 1) totalWeightLbs = 1
   console.log('[rate] totalWeightLbs (after floor):', totalWeightLbs)
   if (maxLength < 12) maxLength = 12
   if (maxWidth < 12) maxWidth = 12

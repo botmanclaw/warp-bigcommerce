@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
     width: savedQuote.width_in || 40,
     sizeUnit: 'IN',
     quantity: savedQuote.total_qty || 1,
-    totalWeight: savedQuote.total_weight_lbs || 100,
+    totalWeight: savedQuote.total_weight_lbs || 1,
     weightUnit: 'lbs',
     stackable: false,
   }]
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
       pickupZipcode: savedQuote.origin_zip || '',
       dropoffZipcode: savedQuote.dest_zip || '',
       commodityName: savedQuote.commodity_name || 'Freight',
-      totalWeight: savedQuote.total_weight_lbs || 150,
+      totalWeight: savedQuote.total_weight_lbs || 1,
       quantity: savedQuote.total_qty || 1,
       length: savedQuote.length_in || 48,
       width: savedQuote.width_in || 40,
