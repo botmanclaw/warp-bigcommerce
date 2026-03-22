@@ -105,8 +105,17 @@ export async function POST(req: NextRequest) {
       stackable: false, isResidentialDelivery: isResidential,
       shipmentType: 'FTL' as const,
     }
+    console.error('[rate/ftl] params:', JSON.stringify({ weight: ftlQuoteParams.totalWeight, qty: ftlQuoteParams.quantity, pallets: Math.round(estimatedPallets), origin: originZip, dest: destination.zip }))
     const ftlRate = await getWarpQuote(warpApiKey, ftlQuoteParams)
-    if (!ftlRate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
+    console.error('[rate/ftl] Warp response:', ftlRate ? `$${ftlRate.totalCharge} / ${ftlRate.transitDays}d / quoteId:${ftlRate.quoteId}` : 'NULL')
+    if (!ftlRate) {
+      // Fallback: show contact-us placeholder so cart doesn't silently fail
+      const ftlId = `ftl_${Date.now()}`
+      return NextResponse.json({
+        quote_id: ftlId, messages: [],
+        carrier_quotes: [{ carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' }, quotes: [{ code: ftlId, display_name: 'Warp FTL — Contact for Pricing', rate_id: ftlId, cost: { currency: 'USD', amount: 0.01 }, transit_time: { units: 'BUSINESS_DAYS', duration: 5 } }] }],
+      })
+    }
 
     const ts = Date.now()
     const rateId = `WARP_FTL_${ts}`
