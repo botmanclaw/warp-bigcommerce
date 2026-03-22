@@ -130,41 +130,19 @@ export async function POST(req: NextRequest) {
   const shipTo = shipToEarly
   if (!shipTo) return NextResponse.json({ ok: false, error: 'No shipping address' })
 
-  // Build items list from order products
-  const listItems = (products || []).map((p: {
-    name: string
-    quantity: number
-    weight?: number
-    depth?: number
-    width?: number
-    height?: number
-  }) => ({
-    name: p.name || 'Item',
+  // Build listItems using saved quote values (floor-applied) so they match exactly what was sent to Warp at quote time
+  const listItems = [{
+    name: savedQuote.commodity_name || 'Freight',
     packaging: 'PALLET',
-    height: Math.max(1, Math.round(p.height || savedQuote.height_in || 48)),
-    length: Math.max(1, Math.round(p.depth || savedQuote.length_in || 48)),
-    width: Math.max(1, Math.round(p.width || savedQuote.width_in || 40)),
+    height: savedQuote.height_in || 48,
+    length: savedQuote.length_in || 48,
+    width: savedQuote.width_in || 40,
     sizeUnit: 'IN',
-    quantity: p.quantity || 1,
-    totalWeight: Math.max(1, Math.round(normalizeWeightToLbs(p.weight || 0, 'oz') || savedQuote.total_weight_lbs / (products?.length || 1))),
+    quantity: savedQuote.total_qty || 1,
+    totalWeight: savedQuote.total_weight_lbs || 100,
     weightUnit: 'lbs',
     stackable: false,
-  }))
-
-  if (listItems.length === 0) {
-    listItems.push({
-      name: savedQuote.commodity_name || 'Freight',
-      packaging: 'PALLET',
-      height: savedQuote.height_in || 48,
-      length: savedQuote.length_in || 48,
-      width: savedQuote.width_in || 40,
-      sizeUnit: 'IN',
-      quantity: savedQuote.total_qty || 1,
-      totalWeight: savedQuote.total_weight_lbs || 150,
-      weightUnit: 'lbs',
-      stackable: false,
-    })
-  }
+  }]
 
   // Store origin from merchant config or env fallback
   // Origin ZIP must match what was used at quote time (BC store's shipping origin)
