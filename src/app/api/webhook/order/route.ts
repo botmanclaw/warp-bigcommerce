@@ -94,7 +94,11 @@ export async function POST(req: NextRequest) {
     .limit(1)
 
   if (bbServiceLevelPattern) {
+    // B&B order — match the specific tier quote
     quoteQuery = quoteQuery.ilike('rate_id', `${bbServiceLevelPattern}%`)
+  } else {
+    // LTL/FTL order — exclude all B&B quotes
+    quoteQuery = quoteQuery.not('rate_id', 'ilike', 'WARP_BB%')
   }
 
   const { data: savedQuote, error: quoteErr } = await quoteQuery.single()
