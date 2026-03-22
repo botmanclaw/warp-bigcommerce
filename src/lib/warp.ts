@@ -183,3 +183,96 @@ export async function bookWarpShipment(
 }
 
 
+
+// FTL: use /freights/freight-quote (returns multiple carrier options)
+export interface FreightQuoteOption {
+  source: string
+  id: string
+  carrierName: string
+  shipmentType: string   // 'FTL' | 'LTL'
+  transitTime: number    // seconds
+  rate: number
+  currency: string
+}
+
+export async function getFreightQuoteOptions(
+  apiKey: string,
+  params: { pickupZipcode: string; dropoffZipcode: string; totalWeight: number; quantity: number; length: number; width: number; height: number; commodityName: string; pickupDate: string }
+): Promise<FreightQuoteOption[]> {
+  const item = {
+    name: params.commodityName || 'Freight',
+    packaging: 'PALLET',
+    quantity: Math.max(1, params.quantity),
+    totalWeight: Math.max(1, Math.round(params.totalWeight)),
+    weightUnit: 'lbs',
+    length: Math.max(1, Math.round(params.length)),
+    width: Math.max(1, Math.round(params.width)),
+    height: Math.max(1, Math.round(params.height)),
+    sizeUnit: 'IN',
+    stackable: false,
+  }
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 25000)
+  try {
+    const res = await fetch(`${WARP_BASE}/freights/freight-quote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: apiKey },
+      signal: controller.signal,
+      body: JSON.stringify({
+        pickupDate: params.pickupDate,
+        pickupInfo: { zipcode: params.pickupZipcode },
+        deliveryInfo: { zipcode: params.dropoffZipcode },
+        items: [item],
+      }),
+    })
+    if (!res.ok) {
+      console.error('[warp] freight-quote failed:', res.status, await res.text().catch(() => ''))
+      return []
+    }
+    const data = await res.json()
+    return (data.options ?? []) as FreightQuoteOption[]
+  } catch (err) {
+    console.error('[warp] freight-quote error:', err)
+    return []
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+// FTL booking: use /freights/book (pairs with freight-quote option.id)
+export async function bookFreightFTL(
+  apiKey: string,
+  params: {
+    quoteId: string
+    pickupInfo: { locationName: string; contactName: string; contactPhone: string; contactEmail?: string; address: { street: string; city: string; state: string; zipcode: string }; timeWindow: { from: string; to: string } }
+    deliveryInfo: { locationName: string; contactName: string; contactPhone: string; contactEmail?: string; address: { street: string; city: string; state: string; zipcode: string }; timeWindow: { from: string; to: string } }
+    items: Array<{ name: string; packaging: string; height: number; length: number; width: number; sizeUnit: string; quantity: number; totalWeight: number; weightUnit: string; stackable: boolean }>
+    refNum?: string
+  }
+): Promise<{ trackingNumber?: string; shipmentId?: string; raw: Record<string, unknown> }> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 25000)
+  try {
+    const res = await fetch(`${WARP_BASE}/freights/book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: apiKey },
+      signal: controller.signal,
+      body: JSON.stringify(params),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Warp FTL book failed: ${res.status} ${text}`)
+    }
+    const data = await res.json()
+    return {
+      trackingNumber: data.trackingNumber ?? data.proNumber ?? data.shipmentIds?.[0],
+      shipmentId: data.shipmentIds?.[0] ?? data.orderId,
+      raw: data,
+    }
+  } catch (err) {
+    console.error('[warp] bookFreightFTL error:', err)
+    throw err
+  } finally {
+    clearTimeout(timeout)
+  }
+}

@@ -2,7 +2,7 @@
 // Auto-detects cart type: Big & Bulky → 3 service levels | FTL → Request Capacity | LTL → standard rate
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { getWarpQuote, normalizeWeightToLbs, normalizeDimInches } from '@/lib/warp'
+import { getWarpQuote, getFreightQuoteOptions, nextBusinessDay, normalizeWeightToLbs, normalizeDimInches } from '@/lib/warp'
 
 export const maxDuration = 30
 
@@ -92,38 +92,26 @@ export async function POST(req: NextRequest) {
   const isBigBulky = hasBigBulkyItem && !isFTL
   const isResidential = destination.address_type?.toUpperCase() === 'RESIDENTIAL'
 
-  // FTL: get real Warp FTL quote
+  // FTL: use /freights/freight-quote, pick cheapest FTL option
   if (isFTL) {
-    // Use pallet-based weight estimate if actual weight is too low for FTL (min 500 lbs/pallet)
     const ftlWeight = Math.max(totalWeightLbs, estimatedPallets * 500, 10000)
-    const ftlQuoteParams = {
+    const pickupDate = nextBusinessDay()
+    const options = await getFreightQuoteOptions(warpApiKey, {
       pickupZipcode: originZip, dropoffZipcode: destination.zip,
-      pickupCity: origin.city, pickupState: origin.state_iso2,
-      dropoffCity: destination.city, dropoffState: destination.state_iso2,
-      commodityName, totalWeight: ftlWeight, quantity: totalQty,
+      totalWeight: ftlWeight, quantity: totalQty,
       length: Math.max(maxLength, 48), width: Math.max(maxWidth, 40), height: Math.max(maxHeight, 48),
-      stackable: false, isResidentialDelivery: isResidential,
-      shipmentType: 'FTL' as const,
-    }
-    console.error('[rate/ftl] params:', JSON.stringify({ weight: ftlQuoteParams.totalWeight, qty: ftlQuoteParams.quantity, pallets: Math.round(estimatedPallets), origin: originZip, dest: destination.zip }))
-    const ftlRate = await getWarpQuote(warpApiKey, ftlQuoteParams)
-    console.error('[rate/ftl] Warp response:', ftlRate ? `$${ftlRate.totalCharge} / ${ftlRate.transitDays}d / quoteId:${ftlRate.quoteId}` : 'NULL')
-    if (!ftlRate) {
-      // Fallback: show contact-us placeholder so cart doesn't silently fail
-      const ftlId = `ftl_${Date.now()}`
-      return NextResponse.json({
-        quote_id: ftlId, messages: [],
-        carrier_quotes: [{ carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' }, quotes: [{ code: ftlId, display_name: 'Warp FTL — Contact for Pricing', rate_id: ftlId, cost: { currency: 'USD', amount: 0.01 }, transit_time: { units: 'BUSINESS_DAYS', duration: 5 } }] }],
-      })
-    }
+      commodityName, pickupDate,
+    })
+    const ftlOption = options.filter(o => o.shipmentType === 'FTL').sort((a, b) => a.rate - b.rate)[0]
+    if (!ftlOption) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
 
     const ts = Date.now()
     const rateId = `WARP_FTL_${ts}`
-    const transitDays = ftlRate.transitDays ?? 3
+    const transitDays = Math.round(ftlOption.transitTime / 86400) || 1
 
     await supabase.from('bc_quotes').insert({
-      rate_id: rateId, store_hash: storeId, warp_quote_id: ftlRate.quoteId,
-      amount: ftlRate.totalCharge, transit_days: transitDays,
+      rate_id: rateId, store_hash: storeId, warp_quote_id: ftlOption.id,
+      amount: ftlOption.rate, transit_days: transitDays,
       origin_zip: originZip, dest_zip: destination.zip,
       dest_city: destination.city, dest_state: destination.state_iso2,
       is_residential: isResidential, items_snapshot: itemSnapshots,
@@ -137,7 +125,7 @@ export async function POST(req: NextRequest) {
       quote_id: rateId, messages: [],
       carrier_quotes: [{
         carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' },
-        quotes: [{ code: rateId, display_name: 'Warp FTL', rate_id: rateId, cost: { currency: 'USD', amount: ftlRate.totalCharge }, transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } }],
+        quotes: [{ code: rateId, display_name: `Warp FTL — ${ftlOption.carrierName}`, rate_id: rateId, cost: { currency: 'USD', amount: ftlOption.rate }, transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } }],
       }],
     })
   }
