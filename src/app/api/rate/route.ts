@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const { base_options } = body
   const { origin, destination, items } = base_options
   const storeId = (base_options.store_id || '').replace(/^stores\//, '')
-  console.error('[rate] storeId:', storeId, 'destZip:', destination?.zip, 'totalItems:', items?.length)
+  console.log('[rate] storeId:', storeId, 'destZip:', destination?.zip, 'totalItems:', items?.length)
 
   const warpApiKey = process.env.WARP_API_KEY || ''
   if (!warpApiKey) return NextResponse.json({ quote_id: 'no_key', carrier_quotes: [], messages: [] })
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   // Use merchant's configured origin ZIP from setup page (fallback to BC store origin)
   const { data: merchant } = await supabase.from('bc_merchants').select('origin_zip').eq('store_hash', storeId).single()
   const originZip = merchant?.origin_zip || origin.zip
-  console.error('[rate] merchant originZip:', merchant?.origin_zip, 'fallback:', origin.zip, 'using:', originZip)
+  console.log('[rate] merchant originZip:', merchant?.origin_zip, 'fallback:', origin.zip, 'using:', originZip)
 
   // Aggregate cart
   let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0, estimatedPallets = 0
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   // Ensure minimum 100 lbs so Warp always returns a freight quote (LTL minimum)
   if (totalWeightLbs < 100) totalWeightLbs = 100
-  console.error('[rate] totalWeightLbs (after floor):', totalWeightLbs)
+  console.log('[rate] totalWeightLbs (after floor):', totalWeightLbs)
   if (maxLength < 12) maxLength = 12
   if (maxWidth < 12) maxWidth = 12
   if (maxHeight < 12) maxHeight = 12
@@ -152,10 +152,7 @@ export async function POST(req: NextRequest) {
 
     const rate = await getWarpQuote(warpApiKey, baseQuoteParams)
 
-    if (!rate) {
-      console.error('[rate] Warp returned null — no quote for:', { originZip, destZip: destination.zip, totalWeightLbs })
-      return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
-    }
+    if (!rate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
 
     const rateId = `warp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
