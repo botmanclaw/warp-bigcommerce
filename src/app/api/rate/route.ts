@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   // Use merchant's configured origin ZIP from setup page (fallback to BC store origin)
   const { data: merchant } = await supabase.from('bc_merchants').select('origin_zip').eq('store_hash', storeId).single()
   const originZip = merchant?.origin_zip || origin.zip
-  console.log('[rate] merchant originZip:', merchant?.origin_zip, 'fallback:', origin.zip, 'using:', originZip, 'totalWeightLbs:', totalWeightLbs)
+  console.log('[rate] merchant originZip:', merchant?.origin_zip, 'fallback:', origin.zip, 'using:', originZip)
 
   // Aggregate cart
   let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0, estimatedPallets = 0
@@ -83,6 +83,7 @@ export async function POST(req: NextRequest) {
 
   // Ensure minimum 100 lbs so Warp always returns a freight quote (LTL minimum)
   if (totalWeightLbs < 100) totalWeightLbs = 100
+  console.log('[rate] totalWeightLbs (after floor):', totalWeightLbs, 'isBigBulky:', hasBigBulkyItem && !isFTL, 'isFTL:', isFTL)
   if (maxLength < 12) maxLength = 12
   if (maxWidth < 12) maxWidth = 12
   if (maxHeight < 12) maxHeight = 12
