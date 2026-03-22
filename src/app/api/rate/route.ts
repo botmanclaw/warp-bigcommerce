@@ -79,11 +79,11 @@ export async function POST(req: NextRequest) {
   if (maxHeight < 1) maxHeight = 48
   if (totalQty < 1) totalQty = 1
 
-  // Ensure minimum 1 lb so Warp can always quote (products with no weight set default to 0)
-  if (totalWeightLbs < 1) totalWeightLbs = 1
-  if (maxLength < 1) maxLength = 12
-  if (maxWidth < 1) maxWidth = 12
-  if (maxHeight < 1) maxHeight = 12
+  // Ensure minimum 100 lbs so Warp always returns a freight quote (LTL minimum)
+  if (totalWeightLbs < 100) totalWeightLbs = 100
+  if (maxLength < 12) maxLength = 12
+  if (maxWidth < 12) maxWidth = 12
+  if (maxHeight < 12) maxHeight = 12
 
   const isFTL      = totalWeightLbs >= FTL_WEIGHT_LBS || estimatedPallets >= FTL_PALLETS
   const isBigBulky = hasBigBulkyItem && !isFTL
