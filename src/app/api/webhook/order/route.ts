@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getBCOrder, getBCOrderShippingAddresses, getBCOrderProducts } from '@/lib/bigcommerce'
-import { bookWarpShipment, bookFreightFTL, getWarpQuote, nextBusinessDay, normalizeWeightToLbs } from '@/lib/warp'
+import { bookWarpShipment, getWarpQuote, nextBusinessDay, normalizeWeightToLbs } from '@/lib/warp'
 
 // BC order statuses that indicate payment confirmed / ready to ship
 const PAID_STATUSES = [
@@ -220,36 +220,8 @@ export async function POST(req: NextRequest) {
     refNum: `BC-${orderId}${bbServiceLabel ? ` | ${bbServiceLabel}` : ''}`,
   }
 
-  const isFTLOrder = savedQuote.rate_id?.startsWith('WARP_FTL_')
-
   try {
-    let booking
-    if (isFTLOrder) {
-      // FTL: use /freights/book with timeWindow (not windowTime) and items (not listItems)
-      booking = await bookFreightFTL(warpApiKey, {
-        quoteId: finalQuoteId,
-        pickupInfo: {
-          locationName: bookingParams.pickupInfo.locationName,
-          contactName: bookingParams.pickupInfo.contactName,
-          contactPhone: bookingParams.pickupInfo.contactPhone,
-          contactEmail: bookingParams.pickupInfo.contactEmail,
-          address: bookingParams.pickupInfo.address,
-          timeWindow: { from: `${pickupDate}T08:00:00`, to: `${pickupDate}T16:00:00` },
-        },
-        deliveryInfo: {
-          locationName: bookingParams.deliveryInfo.locationName,
-          contactName: bookingParams.deliveryInfo.contactName,
-          contactPhone: bookingParams.deliveryInfo.contactPhone,
-          contactEmail: bookingParams.deliveryInfo.contactEmail,
-          address: bookingParams.deliveryInfo.address,
-          timeWindow: { from: `${deliveryDate}T08:00:00`, to: `${deliveryDate}T20:00:00` },
-        },
-        items: listItems,
-        refNum: bookingParams.refNum,
-      })
-    } else {
-      booking = await bookWarpShipment(warpApiKey, bookingParams)
-    }
+    const booking = await bookWarpShipment(warpApiKey, bookingParams)
 
     // Save booking record
     await supabase.from('bc_bookings').insert({

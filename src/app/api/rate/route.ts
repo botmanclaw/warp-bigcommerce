@@ -2,7 +2,7 @@
 // Auto-detects cart type: Big & Bulky → 3 service levels | FTL → Request Capacity | LTL → standard rate
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { getWarpQuote, getFreightQuoteOptions, nextBusinessDay, normalizeWeightToLbs, normalizeDimInches } from '@/lib/warp'
+import { getWarpQuote, nextBusinessDay, normalizeWeightToLbs, normalizeDimInches } from '@/lib/warp'
 
 export const maxDuration = 30
 
@@ -92,26 +92,27 @@ export async function POST(req: NextRequest) {
   const isBigBulky = hasBigBulkyItem && !isFTL
   const isResidential = destination.address_type?.toUpperCase() === 'RESIDENTIAL'
 
-  // FTL: use /freights/freight-quote, pick cheapest FTL option
+  // FTL: use /freights/quote with shipmentType:'FTL' (Warp carrier only)
   if (isFTL) {
     const ftlWeight = Math.max(totalWeightLbs, estimatedPallets * 500, 10000)
-    const pickupDate = nextBusinessDay()
-    const options = await getFreightQuoteOptions(warpApiKey, {
+    const ftlRate = await getWarpQuote(warpApiKey, {
       pickupZipcode: originZip, dropoffZipcode: destination.zip,
-      totalWeight: ftlWeight, quantity: totalQty,
+      pickupCity: origin.city, pickupState: origin.state_iso2,
+      dropoffCity: destination.city, dropoffState: destination.state_iso2,
+      commodityName, totalWeight: ftlWeight, quantity: totalQty,
       length: Math.max(maxLength, 48), width: Math.max(maxWidth, 40), height: Math.max(maxHeight, 48),
-      commodityName, pickupDate,
+      stackable: false, isResidentialDelivery: isResidential,
+      shipmentType: 'FTL',
     })
-    const ftlOption = options.filter(o => o.shipmentType === 'FTL').sort((a, b) => a.rate - b.rate)[0]
-    if (!ftlOption) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
+    if (!ftlRate) return NextResponse.json({ quote_id: 'no_rates', carrier_quotes: [], messages: [] })
 
     const ts = Date.now()
     const rateId = `WARP_FTL_${ts}`
-    const transitDays = Math.round(ftlOption.transitTime / 86400) || 1
+    const transitDays = ftlRate.transitDays ?? 3
 
     await supabase.from('bc_quotes').insert({
-      rate_id: rateId, store_hash: storeId, warp_quote_id: ftlOption.id,
-      amount: ftlOption.rate, transit_days: transitDays,
+      rate_id: rateId, store_hash: storeId, warp_quote_id: ftlRate.quoteId,
+      amount: ftlRate.totalCharge, transit_days: transitDays,
       origin_zip: originZip, dest_zip: destination.zip,
       dest_city: destination.city, dest_state: destination.state_iso2,
       is_residential: isResidential, items_snapshot: itemSnapshots,
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest) {
       quote_id: rateId, messages: [],
       carrier_quotes: [{
         carrier_info: { code: 'carrier_573', display_name: 'Warp Freight' },
-        quotes: [{ code: rateId, display_name: `Warp FTL — ${ftlOption.carrierName}`, rate_id: rateId, cost: { currency: 'USD', amount: ftlOption.rate }, transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } }],
+        quotes: [{ code: rateId, display_name: 'Warp FTL', rate_id: rateId, cost: { currency: 'USD', amount: ftlRate.totalCharge }, transit_time: { units: 'BUSINESS_DAYS', duration: transitDays } }],
       }],
     })
   }
