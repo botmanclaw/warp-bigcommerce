@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
   const { base_options } = body
   const { origin, destination, items } = base_options
   const storeId = (base_options.store_id || '').replace(/^stores\//, '')
+  console.log('[rate] storeId:', storeId, 'destZip:', destination?.zip, 'totalItems:', items?.length)
 
   const warpApiKey = process.env.WARP_API_KEY || ''
   if (!warpApiKey) return NextResponse.json({ quote_id: 'no_key', carrier_quotes: [], messages: [] })
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
   // Use merchant's configured origin ZIP from setup page (fallback to BC store origin)
   const { data: merchant } = await supabase.from('bc_merchants').select('origin_zip').eq('store_hash', storeId).single()
   const originZip = merchant?.origin_zip || origin.zip
+  console.log('[rate] merchant originZip:', merchant?.origin_zip, 'fallback:', origin.zip, 'using:', originZip, 'totalWeightLbs:', totalWeightLbs)
 
   // Aggregate cart
   let totalWeightLbs = 0, maxLength = 0, maxWidth = 0, maxHeight = 0, totalQty = 0, estimatedPallets = 0
